@@ -1,0 +1,40 @@
+# Binaries (leading / means only match at repo root, not subdirs)
+/mockupstream
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool
+*.out
+
+# Go workspace file
+go.work
+go.work.sum
+
+# Dependency directories (vendor is fine to commit if you use it)
+vendor/
+
+# IDE / Editor
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Local config (user-specific overrides, not to be committed)
+config.local.json
+config.json
+
+# Temporary files
+tmp/
+*.tmp
+
+# OS
+.DS_Store
+Thumbs.db

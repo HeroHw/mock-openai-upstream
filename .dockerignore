@@ -1,0 +1,10 @@
+# Keep the Docker build context minimal.
+.git
+.idea
+*.md
+docker-compose.yml
+Dockerfile
+.dockerignore
+config.example.jsonc
+# the binary is built inside the image
+mockupstream
