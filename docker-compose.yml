@@ -39,7 +39,7 @@ services:
     # Optional: mount a JSON config file and point the binary at it. Env vars
     # above still override the file.
     volumes:
-      - ./config.example.json:/config.json:ro
+      - ./config.json:/config.json:ro
     command: ["-config", "/config.json"]
     healthcheck:
       # Reuse the binary's self-probe (scratch image has no curl).
