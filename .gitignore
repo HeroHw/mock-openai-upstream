@@ -30,6 +30,7 @@ vendor/
 # Local config (user-specific overrides, not to be committed)
 config.local.json
 config.json
+.env
 
 # Temporary files
 tmp/

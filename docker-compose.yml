@@ -4,8 +4,8 @@
 #   docker compose up -d --build     # start (detached)
 #   docker compose down              # stop and remove
 #
-# Point a gateway channel's BaseURL at http://mockupstream:18080 (same network)
-# or http://localhost:18080 (from the host) — the gateway needs no code change.
+# Point a gateway channel's BaseURL at http://mockupstream:9050 (same network)
+# or http://localhost:9050 (from the host) — the gateway needs no code change.
 #
 # SECURITY: this service does no auth by default. Only the published localhost
 # port is exposed here; do not bind it to a public interface.
@@ -17,11 +17,11 @@ services:
       dockerfile: Dockerfile
     image: mockupstream:latest
     container_name: mockupstream
-    # The container always listens on :18080. Customize the HOST-side port here
-    # — change the left number (e.g. "9000:18080" to reach it on localhost:9000).
+    # The container always listens on :9050. Customize the HOST-side port here
+    # — change the left number (e.g. "9000:9050" to reach it on localhost:9000).
     # Bound to loopback only, since the mock does no auth by default.
     ports:
-      - "18080:18080"
+      - "${PORT:-9050}:9050"
     # All behavior is configurable via env vars (or a mounted JSON config).
     # Uncomment the `environment:` block and any knobs you need.
     # environment:
