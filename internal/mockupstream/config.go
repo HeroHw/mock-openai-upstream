@@ -21,25 +21,29 @@ const ListenAddr = ":9050"
 
 type Config struct {
 	// chat 类通用行为
-	TTFT          time.Duration // MOCK_TTFT_MS / ttft_ms：SSE 首帧前等待，模拟上游思考时间
+	TTFTMin       time.Duration // MOCK_TTFT_MIN_MS / ttft_min_ms：SSE 首帧前等待最小值（毫秒）
+	TTFTMax       time.Duration // MOCK_TTFT_MAX_MS / ttft_max_ms：SSE 首帧前等待最大值（毫秒）
 	TokenInterval time.Duration // MOCK_TOKEN_INTERVAL_MS / token_interval_ms：流式每个 chunk 间隔，控制吐字速率
-	Latency       time.Duration // MOCK_LATENCY_MS / latency_ms：非流式整体延迟
+	LatencyMin    time.Duration // MOCK_LATENCY_MIN_MS / latency_min_ms：非流式整体延迟最小值（毫秒）
+	LatencyMax    time.Duration // MOCK_LATENCY_MAX_MS / latency_max_ms：非流式整体延迟最大值（毫秒）
 	ErrorRate     float64       // MOCK_ERROR_RATE / error_rate：错误注入率 0~1，按 model+序号哈希确定性命中
 	ErrorStatus   int           // MOCK_ERROR_STATUS / error_status：注入错误时返回的 HTTP 状态码
 	ReplyText     string        // MOCK_REPLY_TEXT / reply_text：chat 回包内容，可固定便于断言
 	UsageMode     string        // MOCK_USAGE_MODE / usage_mode：token 用量模式，"echo"=按输入估算 | "fixed"=固定值
 
 	// 同步生图/生视频（OpenAI 协议，§7）
-	ImageSyncDelay time.Duration // MOCK_IMAGE_SYNC_DELAY_S / image_sync_delay_s：同步生图响应前阻塞秒数
-	VideoSyncDelay time.Duration // MOCK_VIDEO_SYNC_DELAY_S / video_sync_delay_s：同步生视频响应前阻塞秒数
-	SyncJitter     time.Duration // MOCK_SYNC_JITTER_S / sync_jitter_s：同步延时 ±抖动，按 prompt 哈希确定性计算
-	SyncFailRate   float64       // MOCK_SYNC_FAIL_RATE / sync_fail_rate：同步失败注入率，按 prompt 哈希确定性命中
+	ImageSyncDelayMin time.Duration // MOCK_IMAGE_SYNC_DELAY_MIN_S / image_sync_delay_min_s：同步生图最小延迟秒数
+	ImageSyncDelayMax time.Duration // MOCK_IMAGE_SYNC_DELAY_MAX_S / image_sync_delay_max_s：同步生图最大延迟秒数
+	VideoSyncDelayMin time.Duration // MOCK_VIDEO_SYNC_DELAY_MIN_S / video_sync_delay_min_s：同步生视频最小延迟秒数
+	VideoSyncDelayMax time.Duration // MOCK_VIDEO_SYNC_DELAY_MAX_S / video_sync_delay_max_s：同步生视频最大延迟秒数
+	SyncFailRate      float64       // MOCK_SYNC_FAIL_RATE / sync_fail_rate：同步失败注入率，按 prompt 哈希确定性命中
 
 	// 异步生图/生视频（DashScope，§8）
-	ImageDuration    time.Duration // MOCK_IMAGE_DURATION_S / image_duration_s：异步生图处理时长
-	VideoDuration    time.Duration // MOCK_VIDEO_DURATION_S / video_duration_s：异步生视频处理时长
+	ImageDurationMin time.Duration // MOCK_IMAGE_DURATION_MIN_S / image_duration_min_s：异步生图最小处理时长秒数
+	ImageDurationMax time.Duration // MOCK_IMAGE_DURATION_MAX_S / image_duration_max_s：异步生图最大处理时长秒数
+	VideoDurationMin time.Duration // MOCK_VIDEO_DURATION_MIN_S / video_duration_min_s：异步生视频最小处理时长秒数
+	VideoDurationMax time.Duration // MOCK_VIDEO_DURATION_MAX_S / video_duration_max_s：异步生视频最大处理时长秒数
 	VideoConcurrency int           // MOCK_VIDEO_CONCURRENCY / video_concurrency：视频并发槽位，超出的排队为 PENDING
-	TaskJitter       time.Duration // MOCK_TASK_JITTER_S / task_jitter_s：任务时长 ±抖动，按 task_id 哈希确定性计算
 	TaskFailRate     float64       // MOCK_TASK_FAIL_RATE / task_fail_rate：异步任务失败率，按 task_id 哈希命中转 FAILED
 
 	// 可选增强（§10）
@@ -50,23 +54,27 @@ type Config struct {
 // defaults returns the built-in configuration used when nothing is overridden.
 func defaults() Config {
 	return Config{
-		TTFT:          0,
+		TTFTMin:       1 * time.Second,
+		TTFTMax:       30 * time.Second,
 		TokenInterval: 10 * time.Millisecond,
-		Latency:       0,
+		LatencyMin:    1 * time.Second,
+		LatencyMax:    30 * time.Second,
 		ErrorRate:     0,
 		ErrorStatus:   500,
 		ReplyText:     "Hello from the mock upstream service.",
 		UsageMode:     "echo",
 
-		ImageSyncDelay: 60 * time.Second,
-		VideoSyncDelay: 60 * time.Second,
-		SyncJitter:     5 * time.Second,
-		SyncFailRate:   0,
+		ImageSyncDelayMin: 1 * time.Second,
+		ImageSyncDelayMax: 30 * time.Second,
+		VideoSyncDelayMin: 1 * time.Second,
+		VideoSyncDelayMax: 30 * time.Second,
+		SyncFailRate:      0,
 
-		ImageDuration:    60 * time.Second,
-		VideoDuration:    60 * time.Second,
+		ImageDurationMin: 1 * time.Second,
+		ImageDurationMax: 30 * time.Second,
+		VideoDurationMin: 1 * time.Second,
+		VideoDurationMax: 30 * time.Second,
 		VideoConcurrency: 2,
-		TaskJitter:       5 * time.Second,
 		TaskFailRate:     0,
 
 		RequireKey: false,

@@ -7,10 +7,11 @@ import (
 
 func testCfg() Config {
 	c := defaults()
-	c.ImageDuration = 60 * time.Second
-	c.VideoDuration = 60 * time.Second
+	c.ImageDurationMin = 60 * time.Second
+	c.ImageDurationMax = 60 * time.Second
+	c.VideoDurationMin = 60 * time.Second
+	c.VideoDurationMax = 60 * time.Second
 	c.VideoConcurrency = 2
-	c.TaskJitter = 0 // deterministic timing in tests
 	c.TaskFailRate = 0
 	return c
 }

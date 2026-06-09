@@ -25,16 +25,23 @@ services:
     # All behavior is configurable via env vars (or a mounted JSON config).
     # Uncomment the `environment:` block and any knobs you need.
     # environment:
-    #   MOCK_TTFT_MS: "200"            # SSE first-byte delay
-    #   MOCK_TOKEN_INTERVAL_MS: "20"   # per-token interval
-    #   MOCK_ERROR_RATE: "0.3"         # deterministic error injection
+    #   MOCK_TTFT_MIN_MS: "1000"           # SSE first-byte delay min (ms)
+    #   MOCK_TTFT_MAX_MS: "30000"          # SSE first-byte delay max (ms)
+    #   MOCK_TOKEN_INTERVAL_MS: "20"       # per-token interval
+    #   MOCK_LATENCY_MIN_MS: "1000"        # non-streaming latency min (ms)
+    #   MOCK_LATENCY_MAX_MS: "10000"       # non-streaming latency max (ms)
+    #   MOCK_ERROR_RATE: "0.3"             # deterministic error injection
     #   MOCK_ERROR_STATUS: "503"
-    #   MOCK_API_KEY: "sk-mock-secret" # enable fixed Bearer auth
-    #   # --- faster image/video for quick integration (default 60s) ---
-    #   MOCK_IMAGE_SYNC_DELAY_S: "5"
-    #   MOCK_VIDEO_SYNC_DELAY_S: "5"
-    #   MOCK_IMAGE_DURATION_S: "5"
-    #   MOCK_VIDEO_DURATION_S: "5"
+    #   MOCK_API_KEY: "sk-mock-secret"     # enable fixed Bearer auth
+    #   # --- random delays for image/video (default [1,30]s) ---
+    #   MOCK_IMAGE_SYNC_DELAY_MIN_S: "1"
+    #   MOCK_IMAGE_SYNC_DELAY_MAX_S: "30"
+    #   MOCK_VIDEO_SYNC_DELAY_MIN_S: "1"
+    #   MOCK_VIDEO_SYNC_DELAY_MAX_S: "30"
+    #   MOCK_IMAGE_DURATION_MIN_S: "1"
+    #   MOCK_IMAGE_DURATION_MAX_S: "30"
+    #   MOCK_VIDEO_DURATION_MIN_S: "1"
+    #   MOCK_VIDEO_DURATION_MAX_S: "30"
     #   MOCK_VIDEO_CONCURRENCY: "2"
     # Optional: mount a JSON config file and point the binary at it. Env vars
     # above still override the file.

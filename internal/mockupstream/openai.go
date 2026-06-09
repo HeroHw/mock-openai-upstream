@@ -70,7 +70,8 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Non-streaming: apply overall latency then write a single completion.
-	if !sleepCtx(s.cfg.Latency, clientGone(r)) {
+	latency := randomDelay(fmt.Sprintf("%s#%d", model, n), s.cfg.LatencyMin, s.cfg.LatencyMax)
+	if !sleepCtx(latency, clientGone(r)) {
 		return // client disconnected
 	}
 	pt, ct, tt := s.usage(prompt, reply)
@@ -107,7 +108,8 @@ func (s *Server) streamChat(w http.ResponseWriter, r *http.Request, model, promp
 	id := fmt.Sprintf("chatcmpl-mock-%d", nextSeq())
 
 	// TTFT: wait before the very first frame (§4).
-	if !sleepCtx(s.cfg.TTFT, done) {
+	ttft := randomDelay(id, s.cfg.TTFTMin, s.cfg.TTFTMax)
+	if !sleepCtx(ttft, done) {
 		return
 	}
 

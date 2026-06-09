@@ -58,19 +58,20 @@ func (q *TaskQueue) Submit(kind, model string, now time.Time) *Task {
 	q.seq++
 	id := fmt.Sprintf("mock-task-%d-%d", now.UnixNano(), q.seq)
 
-	duration := q.cfg.ImageDuration
+	var minDuration, maxDuration time.Duration
 	concurrency := 1 << 30 // images effectively unbounded by default
 	if kind == taskKindVideo {
-		duration = q.cfg.VideoDuration
+		minDuration = q.cfg.VideoDurationMin
+		maxDuration = q.cfg.VideoDurationMax
 		concurrency = q.cfg.VideoConcurrency
 		if concurrency < 1 {
 			concurrency = 1
 		}
+	} else {
+		minDuration = q.cfg.ImageDurationMin
+		maxDuration = q.cfg.ImageDurationMax
 	}
-	duration += jitter(id, q.cfg.TaskJitter)
-	if duration < 0 {
-		duration = 0
-	}
+	duration := randomDelay(id, minDuration, maxDuration)
 
 	startAt := q.scheduleStart(kind, concurrency, now)
 	t := &Task{

@@ -77,7 +77,8 @@ func (s *Server) handleGemini(w http.ResponseWriter, r *http.Request) {
 		return
 	default: // generateContent (and any unrecognized action) → non-stream
 		n := nextSeq()
-		if shouldInject(fmt.Sprintf("%s#%d", model, n), s.cfg.ErrorRate) {
+		key := fmt.Sprintf("%s#%d", model, n)
+		if shouldInject(key, s.cfg.ErrorRate) {
 			writeJSON(w, s.cfg.ErrorStatus, map[string]any{
 				"error": map[string]any{
 					"code":    s.cfg.ErrorStatus,
@@ -87,7 +88,7 @@ func (s *Server) handleGemini(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
-		if !sleepCtx(s.cfg.Latency, clientGone(r)) {
+		if !sleepCtx(randomDelay(key, s.cfg.LatencyMin, s.cfg.LatencyMax), clientGone(r)) {
 			return
 		}
 		writeJSON(w, http.StatusOK, geminiResponse(model, reply, pt, ct))
@@ -130,7 +131,7 @@ func (s *Server) streamGemini(w http.ResponseWriter, r *http.Request, model, rep
 	flusher.Flush()
 	done := clientGone(r)
 
-	if !sleepCtx(s.cfg.TTFT, done) {
+	if !sleepCtx(randomDelay(model, s.cfg.TTFTMin, s.cfg.TTFTMax), done) {
 		return
 	}
 

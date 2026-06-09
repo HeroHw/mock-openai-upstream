@@ -13,9 +13,10 @@ import (
 func newTestServer() *httptest.Server {
 	cfg := defaults()
 	cfg.TokenInterval = 0 // fast streaming in tests
-	cfg.ImageSyncDelay = 0
-	cfg.VideoSyncDelay = 0
-	cfg.SyncJitter = 0
+	cfg.ImageSyncDelayMin = 0
+	cfg.ImageSyncDelayMax = 0
+	cfg.VideoSyncDelayMin = 0
+	cfg.VideoSyncDelayMax = 0
 	return httptest.NewServer(NewServer(cfg).Handler())
 }
 
@@ -165,8 +166,8 @@ func TestSyncImageGeneration(t *testing.T) {
 func TestDashScopeAsyncLifecycle(t *testing.T) {
 	// Short durations so the test runs quickly but still exercises PENDING→SUCCEEDED.
 	cfg := defaults()
-	cfg.ImageDuration = 300 * time.Millisecond
-	cfg.TaskJitter = 0
+	cfg.ImageDurationMin = 300 * time.Millisecond
+	cfg.ImageDurationMax = 300 * time.Millisecond
 	ts := httptest.NewServer(NewServer(cfg).Handler())
 	defer ts.Close()
 

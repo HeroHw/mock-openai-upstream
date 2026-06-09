@@ -40,9 +40,20 @@ func jitter(key string, max time.Duration) time.Duration {
 	if max <= 0 {
 		return 0
 	}
-	span := int64(max)*2 + 1            // range size in ns
+	span := int64(max)*2 + 1 // range size in ns
 	off := int64(hashString(key)%uint64(span)) - int64(max)
 	return time.Duration(off)
+}
+
+// randomDelay returns a deterministic delay in [min, max] derived from key.
+// Used to generate random-looking delays while staying reproducible per request.
+func randomDelay(key string, min, max time.Duration) time.Duration {
+	if min >= max {
+		return min
+	}
+	span := int64(max - min)
+	offset := int64(hashString(key) % uint64(span))
+	return min + time.Duration(offset)
 }
 
 // sleepCtx sleeps for d, but returns early if done fires (e.g. client

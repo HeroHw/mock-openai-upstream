@@ -31,7 +31,7 @@ func TestConfigDefaultsWhenNoFile(t *testing.T) {
 }
 
 func TestConfigFileOverridesDefaults(t *testing.T) {
-	p := writeTempConfig(t, `{"api_key":"sk-file","video_concurrency":5,"image_sync_delay_s":3}`)
+	p := writeTempConfig(t, `{"api_key":"sk-file","video_concurrency":5,"image_sync_delay_min_s":3,"image_sync_delay_max_s":10}`)
 	cfg, err := LoadConfig(p)
 	if err != nil {
 		t.Fatalf("load: %v", err)
@@ -42,8 +42,11 @@ func TestConfigFileOverridesDefaults(t *testing.T) {
 	if cfg.VideoConcurrency != 5 {
 		t.Fatalf("video_concurrency want 5, got %d", cfg.VideoConcurrency)
 	}
-	if cfg.ImageSyncDelay != 3*time.Second {
-		t.Fatalf("image_sync_delay_s want 3s, got %v", cfg.ImageSyncDelay)
+	if cfg.ImageSyncDelayMin != 3*time.Second {
+		t.Fatalf("image_sync_delay_min_s want 3s, got %v", cfg.ImageSyncDelayMin)
+	}
+	if cfg.ImageSyncDelayMax != 10*time.Second {
+		t.Fatalf("image_sync_delay_max_s want 10s, got %v", cfg.ImageSyncDelayMax)
 	}
 	// Unspecified field keeps its default.
 	if cfg.ErrorStatus != 500 {

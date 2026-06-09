@@ -68,7 +68,7 @@ func (s *Server) handleAnthropicMessages(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if !sleepCtx(s.cfg.Latency, clientGone(r)) {
+	if !sleepCtx(randomDelay(msgID, s.cfg.LatencyMin, s.cfg.LatencyMax), clientGone(r)) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -94,7 +94,7 @@ func (s *Server) streamAnthropic(w http.ResponseWriter, r *http.Request, msgID, 
 	}
 	done := clientGone(r)
 
-	if !sleepCtx(s.cfg.TTFT, done) {
+	if !sleepCtx(randomDelay(msgID, s.cfg.TTFTMin, s.cfg.TTFTMax), done) {
 		return
 	}
 

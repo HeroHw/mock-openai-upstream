@@ -15,24 +15,28 @@ import (
 // Duration-like fields use the same units as their env vars so the two layers
 // read identically: *_ms fields are milliseconds, *_s fields are seconds.
 type fileConfig struct {
-	TTFTMs          *int     `json:"ttft_ms"`           // SSE 首帧前等待（毫秒）
+	TTFTMinMs       *int     `json:"ttft_min_ms"`       // SSE 首帧前等待最小值（毫秒）
+	TTFTMaxMs       *int     `json:"ttft_max_ms"`       // SSE 首帧前等待最大值（毫秒）
 	TokenIntervalMs *int     `json:"token_interval_ms"` // 流式 chunk 间隔（毫秒）
-	LatencyMs       *int     `json:"latency_ms"`        // 非流式整体延迟（毫秒）
+	LatencyMinMs    *int     `json:"latency_min_ms"`    // 非流式整体延迟最小值（毫秒）
+	LatencyMaxMs    *int     `json:"latency_max_ms"`    // 非流式整体延迟最大值（毫秒）
 	ErrorRate       *float64 `json:"error_rate"`        // 错误注入率 0~1
 	ErrorStatus     *int     `json:"error_status"`      // 注入错误的 HTTP 状态码
 	ReplyText       *string  `json:"reply_text"`        // chat 回包内容
 	UsageMode       *string  `json:"usage_mode"`        // token 用量模式 echo|fixed
 
-	ImageSyncDelayS *int     `json:"image_sync_delay_s"` // 同步生图阻塞秒数
-	VideoSyncDelayS *int     `json:"video_sync_delay_s"` // 同步生视频阻塞秒数
-	SyncJitterS     *int     `json:"sync_jitter_s"`      // 同步延时 ±抖动秒数
-	SyncFailRate    *float64 `json:"sync_fail_rate"`     // 同步失败注入率 0~1
+	ImageSyncDelayMinS *int     `json:"image_sync_delay_min_s"` // 同步生图最小延迟秒数
+	ImageSyncDelayMaxS *int     `json:"image_sync_delay_max_s"` // 同步生图最大延迟秒数
+	VideoSyncDelayMinS *int     `json:"video_sync_delay_min_s"` // 同步生视频最小延迟秒数
+	VideoSyncDelayMaxS *int     `json:"video_sync_delay_max_s"` // 同步生视频最大延迟秒数
+	SyncFailRate       *float64 `json:"sync_fail_rate"`         // 同步失败注入率 0~1
 
-	ImageDurationS   *int     `json:"image_duration_s"`  // 异步生图处理时长秒数
-	VideoDurationS   *int     `json:"video_duration_s"`  // 异步生视频处理时长秒数
-	VideoConcurrency *int     `json:"video_concurrency"` // 视频并发槽位
-	TaskJitterS      *int     `json:"task_jitter_s"`     // 任务时长 ±抖动秒数
-	TaskFailRate     *float64 `json:"task_fail_rate"`    // 异步任务失败率 0~1
+	ImageDurationMinS *int     `json:"image_duration_min_s"` // 异步生图最小处理时长秒数
+	ImageDurationMaxS *int     `json:"image_duration_max_s"` // 异步生图最大处理时长秒数
+	VideoDurationMinS *int     `json:"video_duration_min_s"` // 异步生视频最小处理时长秒数
+	VideoDurationMaxS *int     `json:"video_duration_max_s"` // 异步生视频最大处理时长秒数
+	VideoConcurrency  *int     `json:"video_concurrency"`    // 视频并发槽位
+	TaskFailRate      *float64 `json:"task_fail_rate"`       // 异步任务失败率 0~1
 
 	RequireKey *bool   `json:"require_key"` // 要求非空凭据但不校验具体值
 	APIKey     *string `json:"api_key"`     // 固定 Bearer 校验值
@@ -51,23 +55,27 @@ func applyFile(cfg *Config, path string) error {
 		return err
 	}
 
-	setMs(&cfg.TTFT, fc.TTFTMs)
+	setMs(&cfg.TTFTMin, fc.TTFTMinMs)
+	setMs(&cfg.TTFTMax, fc.TTFTMaxMs)
 	setMs(&cfg.TokenInterval, fc.TokenIntervalMs)
-	setMs(&cfg.Latency, fc.LatencyMs)
+	setMs(&cfg.LatencyMin, fc.LatencyMinMs)
+	setMs(&cfg.LatencyMax, fc.LatencyMaxMs)
 	setFloat(&cfg.ErrorRate, fc.ErrorRate)
 	setInt(&cfg.ErrorStatus, fc.ErrorStatus)
 	setStr(&cfg.ReplyText, fc.ReplyText)
 	setStr(&cfg.UsageMode, fc.UsageMode)
 
-	setSec(&cfg.ImageSyncDelay, fc.ImageSyncDelayS)
-	setSec(&cfg.VideoSyncDelay, fc.VideoSyncDelayS)
-	setSec(&cfg.SyncJitter, fc.SyncJitterS)
+	setSec(&cfg.ImageSyncDelayMin, fc.ImageSyncDelayMinS)
+	setSec(&cfg.ImageSyncDelayMax, fc.ImageSyncDelayMaxS)
+	setSec(&cfg.VideoSyncDelayMin, fc.VideoSyncDelayMinS)
+	setSec(&cfg.VideoSyncDelayMax, fc.VideoSyncDelayMaxS)
 	setFloat(&cfg.SyncFailRate, fc.SyncFailRate)
 
-	setSec(&cfg.ImageDuration, fc.ImageDurationS)
-	setSec(&cfg.VideoDuration, fc.VideoDurationS)
+	setSec(&cfg.ImageDurationMin, fc.ImageDurationMinS)
+	setSec(&cfg.ImageDurationMax, fc.ImageDurationMaxS)
+	setSec(&cfg.VideoDurationMin, fc.VideoDurationMinS)
+	setSec(&cfg.VideoDurationMax, fc.VideoDurationMaxS)
 	setInt(&cfg.VideoConcurrency, fc.VideoConcurrency)
-	setSec(&cfg.TaskJitter, fc.TaskJitterS)
 	setFloat(&cfg.TaskFailRate, fc.TaskFailRate)
 
 	setBool(&cfg.RequireKey, fc.RequireKey)
@@ -78,23 +86,27 @@ func applyFile(cfg *Config, path string) error {
 // applyEnv overlays environment variables onto cfg. Each var overrides only if
 // set, using the current cfg value as its default so it sits above the file.
 func applyEnv(cfg *Config) {
-	cfg.TTFT = envMS("MOCK_TTFT_MS", cfg.TTFT)
+	cfg.TTFTMin = envMS("MOCK_TTFT_MIN_MS", cfg.TTFTMin)
+	cfg.TTFTMax = envMS("MOCK_TTFT_MAX_MS", cfg.TTFTMax)
 	cfg.TokenInterval = envMS("MOCK_TOKEN_INTERVAL_MS", cfg.TokenInterval)
-	cfg.Latency = envMS("MOCK_LATENCY_MS", cfg.Latency)
+	cfg.LatencyMin = envMS("MOCK_LATENCY_MIN_MS", cfg.LatencyMin)
+	cfg.LatencyMax = envMS("MOCK_LATENCY_MAX_MS", cfg.LatencyMax)
 	cfg.ErrorRate = envFloat("MOCK_ERROR_RATE", cfg.ErrorRate)
 	cfg.ErrorStatus = envInt("MOCK_ERROR_STATUS", cfg.ErrorStatus)
 	cfg.ReplyText = envStr("MOCK_REPLY_TEXT", cfg.ReplyText)
 	cfg.UsageMode = envStr("MOCK_USAGE_MODE", cfg.UsageMode)
 
-	cfg.ImageSyncDelay = envSec("MOCK_IMAGE_SYNC_DELAY_S", cfg.ImageSyncDelay)
-	cfg.VideoSyncDelay = envSec("MOCK_VIDEO_SYNC_DELAY_S", cfg.VideoSyncDelay)
-	cfg.SyncJitter = envSec("MOCK_SYNC_JITTER_S", cfg.SyncJitter)
+	cfg.ImageSyncDelayMin = envSec("MOCK_IMAGE_SYNC_DELAY_MIN_S", cfg.ImageSyncDelayMin)
+	cfg.ImageSyncDelayMax = envSec("MOCK_IMAGE_SYNC_DELAY_MAX_S", cfg.ImageSyncDelayMax)
+	cfg.VideoSyncDelayMin = envSec("MOCK_VIDEO_SYNC_DELAY_MIN_S", cfg.VideoSyncDelayMin)
+	cfg.VideoSyncDelayMax = envSec("MOCK_VIDEO_SYNC_DELAY_MAX_S", cfg.VideoSyncDelayMax)
 	cfg.SyncFailRate = envFloat("MOCK_SYNC_FAIL_RATE", cfg.SyncFailRate)
 
-	cfg.ImageDuration = envSec("MOCK_IMAGE_DURATION_S", cfg.ImageDuration)
-	cfg.VideoDuration = envSec("MOCK_VIDEO_DURATION_S", cfg.VideoDuration)
+	cfg.ImageDurationMin = envSec("MOCK_IMAGE_DURATION_MIN_S", cfg.ImageDurationMin)
+	cfg.ImageDurationMax = envSec("MOCK_IMAGE_DURATION_MAX_S", cfg.ImageDurationMax)
+	cfg.VideoDurationMin = envSec("MOCK_VIDEO_DURATION_MIN_S", cfg.VideoDurationMin)
+	cfg.VideoDurationMax = envSec("MOCK_VIDEO_DURATION_MAX_S", cfg.VideoDurationMax)
 	cfg.VideoConcurrency = envInt("MOCK_VIDEO_CONCURRENCY", cfg.VideoConcurrency)
-	cfg.TaskJitter = envSec("MOCK_TASK_JITTER_S", cfg.TaskJitter)
 	cfg.TaskFailRate = envFloat("MOCK_TASK_FAIL_RATE", cfg.TaskFailRate)
 
 	cfg.RequireKey = envBool("MOCK_REQUIRE_KEY", cfg.RequireKey)

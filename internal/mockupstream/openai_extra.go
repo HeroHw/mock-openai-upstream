@@ -79,7 +79,7 @@ func deterministicVector(text string) []float64 {
 // handleAudioSpeech (TTS) returns audio bytes. We reuse the placeholder MP4 as
 // stand-in audio; the gateway only needs a non-empty audio byte stream.
 func (s *Server) handleAudioSpeech(w http.ResponseWriter, r *http.Request) {
-	if !sleepCtx(s.cfg.Latency, clientGone(r)) {
+	if !sleepCtx(randomDelay("audio-speech", s.cfg.LatencyMin, s.cfg.LatencyMax), clientGone(r)) {
 		return
 	}
 	w.Header().Set("Content-Type", "audio/mpeg")
@@ -91,7 +91,7 @@ func (s *Server) handleAudioSpeech(w http.ResponseWriter, r *http.Request) {
 // handleAudioTranscription (STT) accepts a multipart upload and returns a
 // fixed transcript. We don't parse the audio; we just acknowledge the upload.
 func (s *Server) handleAudioTranscription(w http.ResponseWriter, r *http.Request) {
-	if !sleepCtx(s.cfg.Latency, clientGone(r)) {
+	if !sleepCtx(randomDelay("audio-transcription", s.cfg.LatencyMin, s.cfg.LatencyMax), clientGone(r)) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{

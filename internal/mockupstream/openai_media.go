@@ -65,17 +65,17 @@ func formInt(r *http.Request, key string, def int) int {
 }
 
 func (s *Server) handleImageGeneration(w http.ResponseWriter, r *http.Request) {
-	s.serveSyncMedia(w, r, s.cfg.ImageSyncDelay, "mock-image.png")
+	s.serveSyncMedia(w, r, s.cfg.ImageSyncDelayMin, s.cfg.ImageSyncDelayMax, "mock-image.png")
 }
 
 func (s *Server) handleVideoGeneration(w http.ResponseWriter, r *http.Request) {
-	s.serveSyncMedia(w, r, s.cfg.VideoSyncDelay, "mock-video.mp4")
+	s.serveSyncMedia(w, r, s.cfg.VideoSyncDelayMin, s.cfg.VideoSyncDelayMax, "mock-video.mp4")
 }
 
 // serveSyncMedia is the shared sync flow for image and video: parse, optionally
-// inject failure, sleep (delay ± jitter) holding the connection, then write the
+// inject failure, sleep (random delay in [min, max]) holding the connection, then write the
 // result with n entries (doc §7.1–§7.2).
-func (s *Server) serveSyncMedia(w http.ResponseWriter, r *http.Request, baseDelay time.Duration, asset string) {
+func (s *Server) serveSyncMedia(w http.ResponseWriter, r *http.Request, minDelay, maxDelay time.Duration, asset string) {
 	req := parseMediaRequest(r)
 
 	// Deterministic failure injection keyed by prompt (§7.1).
@@ -84,11 +84,8 @@ func (s *Server) serveSyncMedia(w http.ResponseWriter, r *http.Request, baseDela
 		return
 	}
 
-	// Hold the connection for the configured delay plus deterministic jitter.
-	delay := baseDelay + jitter(req.prompt, s.cfg.SyncJitter)
-	if delay < 0 {
-		delay = 0
-	}
+	// Hold the connection for a random delay determined by the prompt hash.
+	delay := randomDelay(req.prompt, minDelay, maxDelay)
 	if !sleepCtx(delay, clientGone(r)) {
 		return // client/gateway gave up (timeout path under test)
 	}
