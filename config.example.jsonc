@@ -1,12 +1,12 @@
 // mockupstream 配置参考（带中文注释）
 //
 // 注意：这是供阅读的 JSONC 文件，含 // 注释，不能直接加载。
-// 实际使用请用同目录的 config.example.json（无注释的纯 JSON），
+// 实际使用请用同目录的 config.json（无注释的纯 JSON），
 // 或把本文件的注释删掉另存。
 //
 // 配置优先级：内置默认值 < 本配置文件 < 环境变量。
 // 未写的字段保持默认值；时间字段单位见各项备注（*_ms 毫秒、*_s 秒）。
-// 注意：监听端口固定为容器内 :18080，不可配置；要换端口请改 docker-compose 的端口映射。
+// 注意：监听端口固定为容器内 :9050，不可配置；要换端口请改 docker-compose 的端口映射。
 {
   // ── 基础 ──
   "api_key": "sk-mock-secret",      // 固定 Bearer 校验值，对应 MOCK_API_KEY；
@@ -16,25 +16,29 @@
                                     //   设了 api_key 时本项可忽略（已隐含开启校验）
 
   // ── chat 类通用行为 ──
-  "ttft_ms": 30000,                     // SSE 首帧前等待毫秒数，模拟上游思考时间，对应 MOCK_TTFT_MS
+  "ttft_min_ms": 1000,              // SSE 首帧前等待最小毫秒数，模拟上游思考时间，对应 MOCK_TTFT_MIN_MS
+  "ttft_max_ms": 30000,             // SSE 首帧前等待最大毫秒数，对应 MOCK_TTFT_MAX_MS
   "token_interval_ms": 10,          // 流式每个 chunk 间隔毫秒数，控制吐字速率，对应 MOCK_TOKEN_INTERVAL_MS
-  "latency_ms": 10000,                  // 非流式整体延迟毫秒数，对应 MOCK_LATENCY_MS
+  "latency_min_ms": 1000,           // 非流式整体延迟最小毫秒数，对应 MOCK_LATENCY_MIN_MS
+  "latency_max_ms": 10000,          // 非流式整体延迟最大毫秒数，对应 MOCK_LATENCY_MAX_MS
   "error_rate": 0,                  // 错误注入率 0~1，按 model+序号哈希确定性命中，对应 MOCK_ERROR_RATE
   "error_status": 500,              // 注入错误时返回的 HTTP 状态码，对应 MOCK_ERROR_STATUS
   "reply_text": "Hello from the mock upstream service.", // chat 回包内容，可固定便于断言，对应 MOCK_REPLY_TEXT
   "usage_mode": "echo",             // token 用量模式：echo=按输入估算；fixed=固定值便于校验计费，对应 MOCK_USAGE_MODE
 
   // ── 同步生图/生视频（OpenAI 协议，§7）──
-  "image_sync_delay_s": 60,         // 同步生图响应前阻塞秒数，对应 MOCK_IMAGE_SYNC_DELAY_S；
+  "image_sync_delay_min_s": 1,      // 同步生图响应前阻塞最小秒数，对应 MOCK_IMAGE_SYNC_DELAY_MIN_S
+  "image_sync_delay_max_s": 30,     // 同步生图响应前阻塞最大秒数，对应 MOCK_IMAGE_SYNC_DELAY_MAX_S；
                                     //   设到大于网关超时（如 700）可主动触发超时分支演练
-  "video_sync_delay_s": 60,         // 同步生视频响应前阻塞秒数，对应 MOCK_VIDEO_SYNC_DELAY_S
-  "sync_jitter_s": 5,               // 同步延时 ±抖动秒数，按 prompt 哈希确定性计算，对应 MOCK_SYNC_JITTER_S
+  "video_sync_delay_min_s": 1,      // 同步生视频响应前阻塞最小秒数，对应 MOCK_VIDEO_SYNC_DELAY_MIN_S
+  "video_sync_delay_max_s": 30,     // 同步生视频响应前阻塞最大秒数，对应 MOCK_VIDEO_SYNC_DELAY_MAX_S
   "sync_fail_rate": 0,              // 同步失败注入率 0~1，按 prompt 哈希确定性命中，对应 MOCK_SYNC_FAIL_RATE
 
   // ── 异步生图/生视频（DashScope，§8）──
-  "image_duration_s": 60,           // 异步生图处理时长秒数（提交后约多久轮询到 SUCCEEDED），对应 MOCK_IMAGE_DURATION_S
-  "video_duration_s": 60,           // 异步生视频处理时长秒数，对应 MOCK_VIDEO_DURATION_S
+  "image_duration_min_s": 1,        // 异步生图处理时长最小秒数（提交后约多久轮询到 SUCCEEDED），对应 MOCK_IMAGE_DURATION_MIN_S
+  "image_duration_max_s": 30,       // 异步生图处理时长最大秒数，对应 MOCK_IMAGE_DURATION_MAX_S
+  "video_duration_min_s": 1,        // 异步生视频处理时长最小秒数，对应 MOCK_VIDEO_DURATION_MIN_S
+  "video_duration_max_s": 30,       // 异步生视频处理时长最大秒数，对应 MOCK_VIDEO_DURATION_MAX_S
   "video_concurrency": 2,           // 视频并发槽位，超出的任务排队为 PENDING，对应 MOCK_VIDEO_CONCURRENCY
-  "task_jitter_s": 5,               // 任务时长 ±抖动秒数，按 task_id 哈希确定性计算，对应 MOCK_TASK_JITTER_S
   "task_fail_rate": 0               // 异步任务失败率 0~1，按 task_id 哈希确定性命中转 FAILED，对应 MOCK_TASK_FAIL_RATE
 }
