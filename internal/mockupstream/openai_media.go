@@ -118,5 +118,6 @@ func assetBase64(asset string) string {
 	if strings.HasSuffix(asset, ".mp4") {
 		return mockMP4Base64
 	}
-	return mockPNGBase64
+	// ~10MB base64 用于压测大响应体(详见 assets.go)。
+	return mockBigB64
 }

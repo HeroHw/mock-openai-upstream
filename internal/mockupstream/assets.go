@@ -19,6 +19,14 @@ const mockPNGBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42
 const mockMP4Base64 = "AAAAHGZ0eXBpc29tAAACAGlzb21pc28yYXZjMQAAAAhmcmVlAAAAGm1kYXQAAAAA" +
 	"AAAACG1vb3YAAAAA"
 
+// mockBigB64 is a ~10MB base64 string used for load testing the b64_json image
+// flow. The bytes are not a valid image — clients won't decode it to a picture —
+// it exists purely to exercise large-payload transfer/bandwidth. base64 字母表
+// 里 'A' 是合法字符,这里用纯 'A' 填充到目标长度(长度取 4 的倍数以保证可解码)。
+const bigB64Size = 10 * 1024 * 1024 // 10 MiB of base64 text
+
+var mockBigB64 = strings.Repeat("A", bigB64Size-bigB64Size%4)
+
 func mustDecode(b64 string) []byte {
 	data, err := base64.StdEncoding.DecodeString(b64)
 	if err != nil {
