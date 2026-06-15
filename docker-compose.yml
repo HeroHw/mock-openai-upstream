@@ -48,6 +48,34 @@ services:
     volumes:
       - ./config.json:/config.json:ro
     command: ["-config", "/config.json"]
+    # Resource limits sized for an 8-core / 32G host running the load generator
+    # on the same machine: give the mock 6 cores and 16G, leaving 2 cores + RAM
+    # for the host and the load tool. GOMAXPROCS is pinned to the CPU limit so
+    # the Go runtime schedules to the cgroup quota, not the host's 8 cores.
+    # Each in-flight 10MB b64 response holds its payload in the socket buffer, so
+    # 16G comfortably absorbs hundreds of concurrent large responses.
+    environment:
+      GOMAXPROCS: "6"
+      # --- load-test tuning: env overrides the mounted config.json (doc §4) ---
+      # Disable the random 1~30s sync delay so the test measures throughput /
+      # bandwidth of the 10MB b64 response, not the artificial wait. Remove these
+      # two lines to restore the configured latency behavior.
+      MOCK_IMAGE_SYNC_DELAY_MIN_S: "0"
+      MOCK_IMAGE_SYNC_DELAY_MAX_S: "0"
+    deploy:
+      resources:
+        limits:
+          cpus: "6"
+          memory: 16G
+        reservations:
+          cpus: "2"
+          memory: 2G
+    # High concurrency opens many sockets at once; raise the open-file limit so
+    # the mock doesn't hit the default 1024 fd cap under load.
+    ulimits:
+      nofile:
+        soft: 1048576
+        hard: 1048576
     healthcheck:
       # Reuse the binary's self-probe (scratch image has no curl).
       test: ["CMD", "/mockupstream", "-healthcheck"]

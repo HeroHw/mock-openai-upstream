@@ -1,6 +1,7 @@
 package mockupstream
 
 import (
+	"encoding/json"
 	"net/http"
 	"strconv"
 	"strings"
@@ -92,32 +93,74 @@ func (s *Server) serveSyncMedia(w http.ResponseWriter, r *http.Request, minDelay
 
 	b64 := req.responseFormat == "b64_json"
 	isVideo := strings.HasSuffix(asset, ".mp4")
-	data := make([]any, 0, req.n)
-	for i := 0; i < req.n; i++ {
-		entry := map[string]any{}
-		if b64 {
-			entry["b64_json"] = assetBase64(asset)
-		} else {
-			entry["url"] = s.assetURL(r, asset)
-		}
-		// images echo the (possibly revised) prompt; videos don't.
-		if !isVideo && req.prompt != "" {
-			entry["revised_prompt"] = req.prompt
-		}
-		data = append(data, entry)
-	}
-
-	writeJSON(w, http.StatusOK, map[string]any{
-		"created": 0,
-		"data":    data,
-	})
+	s.writeMediaJSON(w, r, req.n, b64, isVideo, req.prompt, asset)
 }
 
-// assetBase64 returns the base64 of a built-in asset for the b64_json format.
-func assetBase64(asset string) string {
-	if strings.HasSuffix(asset, ".mp4") {
-		return mockMP4Base64
+// writeMediaJSON streams the sync image/video response. It deliberately avoids
+// the generic map + json.Encode path (writeJSON): for the b64 flow that path
+// buffers the whole ~10MB payload and scans every byte for escaping, which under
+// concurrency blows up memory (one ~10MB encode buffer per in-flight request)
+// and CPU. Here the large base64 payload is written straight from a shared
+// read-only []byte — never copied into a per-request buffer — and only the
+// small, possibly-unsafe fields (url, prompt) are JSON-escaped. Content-Length
+// is set so load tests don't pay for chunked encoding.
+func (s *Server) writeMediaJSON(w http.ResponseWriter, r *http.Request, n int, b64, isVideo bool, prompt, asset string) {
+	// The large payload: shared []byte for the big image, small literal for mp4.
+	// base64 text needs no JSON escaping, so it is written verbatim.
+	var payload []byte
+	if b64 {
+		if isVideo {
+			payload = []byte(mockMP4Base64)
+		} else {
+			payload = mockBigB64Bytes
+		}
 	}
-	// ~10MB base64 用于压测大响应体(详见 assets.go)。
-	return mockBigB64
+	urlQuoted, _ := json.Marshal(s.assetURL(r, asset)) // quoted + escaped
+	promptQuoted, _ := json.Marshal(prompt)
+	includePrompt := !isVideo && prompt != ""
+
+	// Per-entry segments, written in order: head, [payload], tail.
+	// b64:  {"b64_json":"  <payload>  "[,"revised_prompt":<p>]}
+	// url:  {"url":<urlQuoted>[,"revised_prompt":<p>]}
+	var head, tail []byte
+	if b64 {
+		head = []byte(`{"b64_json":"`)
+		tail = append(tail, '"')
+	} else {
+		head = append(head, `{"url":`...)
+		head = append(head, urlQuoted...)
+	}
+	if includePrompt {
+		tail = append(tail, `,"revised_prompt":`...)
+		tail = append(tail, promptQuoted...)
+	}
+	tail = append(tail, '}')
+
+	prefix := []byte(`{"created":0,"data":[`)
+	suffix := []byte(`]}`)
+
+	// Content-Length is exact and known up front (payload is a fixed length).
+	entryLen := len(head) + len(payload) + len(tail)
+	commas := 0
+	if n > 1 {
+		commas = n - 1
+	}
+	total := len(prefix) + n*entryLen + commas + len(suffix)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Length", itoa(total))
+	w.WriteHeader(http.StatusOK)
+
+	w.Write(prefix)
+	for i := 0; i < n; i++ {
+		if i > 0 {
+			w.Write([]byte{','})
+		}
+		w.Write(head)
+		if len(payload) > 0 {
+			w.Write(payload) // shared bytes, written by reference — never copied
+		}
+		w.Write(tail)
+	}
+	w.Write(suffix)
 }

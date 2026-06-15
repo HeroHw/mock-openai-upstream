@@ -27,6 +27,11 @@ const bigB64Size = 10 * 1024 * 1024 // 10 MiB of base64 text
 
 var mockBigB64 = strings.Repeat("A", bigB64Size-bigB64Size%4)
 
+// mockBigB64Bytes is the same payload as a shared, read-only []byte so the hot
+// b64 response path can write it straight to the socket (no string→[]byte copy,
+// no JSON escape scan). See writeMediaJSON.
+var mockBigB64Bytes = []byte(mockBigB64)
+
 func mustDecode(b64 string) []byte {
 	data, err := base64.StdEncoding.DecodeString(b64)
 	if err != nil {
