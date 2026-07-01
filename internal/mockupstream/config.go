@@ -31,6 +31,10 @@ type Config struct {
 	ReplyText     string        // MOCK_REPLY_TEXT / reply_text：chat 回包内容，可固定便于断言
 	UsageMode     string        // MOCK_USAGE_MODE / usage_mode：token 用量模式，"echo"=按输入估算 | "fixed"=固定值
 
+	// 提示词缓存用量（Anthropic /v1/messages，§5）
+	CacheReadTokens     int // MOCK_CACHE_READ_TOKENS / cache_read_tokens：命中缓存读取的 token 数（cache_read_input_tokens），0=不返回该场景
+	CacheCreationTokens int // MOCK_CACHE_CREATION_TOKENS / cache_creation_tokens：写入缓存的 token 数（cache_creation_input_tokens），0=不返回该场景
+
 	// 同步生图/生视频（OpenAI 协议，§7）
 	ImageSyncDelayMin time.Duration // MOCK_IMAGE_SYNC_DELAY_MIN_S / image_sync_delay_min_s：同步生图最小延迟秒数
 	ImageSyncDelayMax time.Duration // MOCK_IMAGE_SYNC_DELAY_MAX_S / image_sync_delay_max_s：同步生图最大延迟秒数
@@ -63,6 +67,9 @@ func defaults() Config {
 		ErrorStatus:   500,
 		ReplyText:     "Hello from the mock upstream service.",
 		UsageMode:     "echo",
+
+		CacheReadTokens:     0,
+		CacheCreationTokens: 0,
 
 		ImageSyncDelayMin: 1 * time.Second,
 		ImageSyncDelayMax: 30 * time.Second,

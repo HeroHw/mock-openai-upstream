@@ -40,6 +40,21 @@ func extractAnthropicPrompt(m map[string]any) string {
 	return string(sb)
 }
 
+// anthropicUsage builds the usage block for the Anthropic message envelope.
+// input_tokens is the full-price remainder; cache_read_input_tokens (~0.1x base
+// price) and cache_creation_input_tokens (1.25x/2x base price) are reported
+// separately and are NOT folded into input_tokens, matching real upstream
+// prompt-caching semantics (doc §5). Both cache fields are always present so the
+// gateway's billing pipeline sees a stable shape; they are 0 when unconfigured.
+func (s *Server) anthropicUsage(inputTokens, outputTokens int) map[string]any {
+	return map[string]any{
+		"input_tokens":                inputTokens,
+		"output_tokens":               outputTokens,
+		"cache_read_input_tokens":     s.cfg.CacheReadTokens,
+		"cache_creation_input_tokens": s.cfg.CacheCreationTokens,
+	}
+}
+
 func (s *Server) handleAnthropicMessages(w http.ResponseWriter, r *http.Request) {
 	body, _ := readBody(r)
 	req := decodeJSON(body)
@@ -79,7 +94,7 @@ func (s *Server) handleAnthropicMessages(w http.ResponseWriter, r *http.Request)
 		"content":       []any{map[string]any{"type": "text", "text": reply}},
 		"stop_reason":   "end_turn",
 		"stop_sequence": nil,
-		"usage":         map[string]any{"input_tokens": pt, "output_tokens": ct},
+		"usage":         s.anthropicUsage(pt, ct),
 	})
 }
 
@@ -108,7 +123,7 @@ func (s *Server) streamAnthropic(w http.ResponseWriter, r *http.Request, msgID, 
 			"content":       []any{},
 			"stop_reason":   nil,
 			"stop_sequence": nil,
-			"usage":         map[string]any{"input_tokens": pt, "output_tokens": 0},
+			"usage":         s.anthropicUsage(pt, 0),
 		},
 	})
 	if sse.event("message_start", string(start)) != nil {
@@ -146,7 +161,7 @@ func (s *Server) streamAnthropic(w http.ResponseWriter, r *http.Request, msgID, 
 	msgDelta, _ := json.Marshal(map[string]any{
 		"type":  "message_delta",
 		"delta": map[string]any{"stop_reason": "end_turn", "stop_sequence": nil},
-		"usage": map[string]any{"output_tokens": ct},
+		"usage": s.anthropicUsage(pt, ct),
 	})
 	if sse.event("message_delta", string(msgDelta)) != nil {
 		return

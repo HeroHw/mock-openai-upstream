@@ -25,6 +25,9 @@ type fileConfig struct {
 	ReplyText       *string  `json:"reply_text"`        // chat 回包内容
 	UsageMode       *string  `json:"usage_mode"`        // token 用量模式 echo|fixed
 
+	CacheReadTokens     *int `json:"cache_read_tokens"`     // 命中缓存读取的 token 数
+	CacheCreationTokens *int `json:"cache_creation_tokens"` // 写入缓存的 token 数
+
 	ImageSyncDelayMinS *int     `json:"image_sync_delay_min_s"` // 同步生图最小延迟秒数
 	ImageSyncDelayMaxS *int     `json:"image_sync_delay_max_s"` // 同步生图最大延迟秒数
 	VideoSyncDelayMinS *int     `json:"video_sync_delay_min_s"` // 同步生视频最小延迟秒数
@@ -65,6 +68,9 @@ func applyFile(cfg *Config, path string) error {
 	setStr(&cfg.ReplyText, fc.ReplyText)
 	setStr(&cfg.UsageMode, fc.UsageMode)
 
+	setInt(&cfg.CacheReadTokens, fc.CacheReadTokens)
+	setInt(&cfg.CacheCreationTokens, fc.CacheCreationTokens)
+
 	setSec(&cfg.ImageSyncDelayMin, fc.ImageSyncDelayMinS)
 	setSec(&cfg.ImageSyncDelayMax, fc.ImageSyncDelayMaxS)
 	setSec(&cfg.VideoSyncDelayMin, fc.VideoSyncDelayMinS)
@@ -95,6 +101,9 @@ func applyEnv(cfg *Config) {
 	cfg.ErrorStatus = envInt("MOCK_ERROR_STATUS", cfg.ErrorStatus)
 	cfg.ReplyText = envStr("MOCK_REPLY_TEXT", cfg.ReplyText)
 	cfg.UsageMode = envStr("MOCK_USAGE_MODE", cfg.UsageMode)
+
+	cfg.CacheReadTokens = envInt("MOCK_CACHE_READ_TOKENS", cfg.CacheReadTokens)
+	cfg.CacheCreationTokens = envInt("MOCK_CACHE_CREATION_TOKENS", cfg.CacheCreationTokens)
 
 	cfg.ImageSyncDelayMin = envSec("MOCK_IMAGE_SYNC_DELAY_MIN_S", cfg.ImageSyncDelayMin)
 	cfg.ImageSyncDelayMax = envSec("MOCK_IMAGE_SYNC_DELAY_MAX_S", cfg.ImageSyncDelayMax)
