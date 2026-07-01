@@ -70,6 +70,7 @@ APIKey:  任意非空字符串（默认不校验，除非 MOCK_REQUIRE_KEY=1）
 | Anthropic | `/v1/messages`（具名事件帧 SSE） |
 | Gemini | `/v1beta/models/{model}:generateContent`·`:streamGenerateContent`·`:countTokens` |
 | DashScope（异步） | `POST .../text2image/image-synthesis`、`POST .../video-generation/video-synthesis`、`GET /api/v1/tasks/{id}` |
+| 智谱 GLM | `/api/paas/v4/chat/completions`（SSE）、`/api/paas/v4/images/generations`（同步）、`POST /api/paas/v4/videos/generations`（异步提交，CogVideoX）、`GET /api/paas/v4/async-result/{id}`（轮询，返回 `video_result`） |
 | 内部 | `/__assets/{mock-image.png,mock-video.mp4}`、`/__mock/healthz` |
 
 路径按后缀匹配，所以 `BaseURL` 带不带 `/v1` 前缀都能正确路由。
@@ -126,6 +127,7 @@ curl "localhost:18080/v1beta/models/gemini-pro:generateContent?key=sk-mock-secre
 
 - **同步（OpenAI）**：一个 POST 挂住连接，等 `*_SYNC_DELAY_S`（默认 60s）后在**同一响应**里返回结果。把延时设到大于网关超时，即可主动触发超时分支演练。
 - **异步（DashScope）**：提交瞬间返回 `task_id` + `PENDING`，耗时进入按时间计算的状态机，轮询 `/api/v1/tasks/{id}` 在 `*_DURATION_S` 后才翻成 `SUCCEEDED`。视频有并发上限，超出的任务排队为 `PENDING`。
+- **异步（智谱 CogVideoX）**：同一套时间状态机，但走智谱信封——提交返回 `id` + `PROCESSING`，轮询 `/api/paas/v4/async-result/{id}`，完成后翻成 `SUCCESS` 并带 `video_result`（含 `url`、`cover_image_url`），失败为 `FAIL`。
 
 快速联调时把时长缩短，免等 60s：
 

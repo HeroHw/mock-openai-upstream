@@ -105,6 +105,19 @@ func (s *Server) dispatch(w http.ResponseWriter, r *http.Request) {
 	case strings.HasSuffix(path, "/messages"):
 		s.handleAnthropicMessages(w, r)
 
+	// --- Zhipu GLM native (§9): open.bigmodel.cn /api/paas/v4/... . These are
+	// matched before the generic OpenAI-compatible suffixes below so the Zhipu
+	// chat/image/video paths route to their own handlers (async video in
+	// particular differs from OpenAI's synchronous flow). ---
+	case strings.HasPrefix(path, "/api/paas/v4/async-result/"):
+		s.handleZhipuAsyncResult(w, r)
+	case strings.HasSuffix(path, "/paas/v4/videos/generations"):
+		s.handleZhipuVideoSubmit(w, r)
+	case strings.HasSuffix(path, "/paas/v4/images/generations"):
+		s.handleZhipuImage(w, r)
+	case strings.HasSuffix(path, "/paas/v4/chat/completions"):
+		s.handleZhipuChat(w, r)
+
 	// --- OpenAI-compatible (§2.1) ---
 	case strings.HasSuffix(path, "/chat/completions"):
 		s.handleChatCompletions(w, r)
