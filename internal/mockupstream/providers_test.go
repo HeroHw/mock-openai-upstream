@@ -198,6 +198,86 @@ func TestMiniMaxVideoLifecycle(t *testing.T) {
 	}
 }
 
+func TestResponsesNonStream(t *testing.T) {
+	ts := newTestServer()
+	defer ts.Close()
+
+	// input 为字符串形式；gpt-5.x 带 reasoning 参数 → output 含 reasoning 项。
+	resp, data := postJSON(t, ts.URL+"/v1/responses",
+		`{"model":"gpt-5.5","reasoning":{"effort":"high"},"input":"hi there"}`)
+	if resp.StatusCode != 200 {
+		t.Fatalf("status %d: %s", resp.StatusCode, data)
+	}
+	var out map[string]any
+	if err := json.Unmarshal(data, &out); err != nil {
+		t.Fatalf("bad json: %v", err)
+	}
+	if out["object"] != "response" || out["status"] != "completed" {
+		t.Fatalf("want completed response object, got %s", data)
+	}
+	output := out["output"].([]any)
+	if len(output) != 2 {
+		t.Fatalf("want [reasoning, message] output items, got %s", data)
+	}
+	if output[0].(map[string]any)["type"] != "reasoning" {
+		t.Fatalf("first output item should be reasoning: %s", data)
+	}
+	msg := output[1].(map[string]any)
+	text := msg["content"].([]any)[0].(map[string]any)
+	if text["type"] != "output_text" || text["text"] == "" {
+		t.Fatalf("message missing output_text: %s", data)
+	}
+	usage := out["usage"].(map[string]any)
+	details := usage["output_tokens_details"].(map[string]any)
+	if details["reasoning_tokens"].(float64) <= 0 {
+		t.Fatalf("reasoning request should report reasoning_tokens: %s", data)
+	}
+
+	// 无 reasoning 参数的普通模型 → 只有 message 项。
+	_, data2 := postJSON(t, ts.URL+"/v1/responses",
+		`{"model":"gpt-5.4","input":[{"role":"user","content":[{"type":"input_text","text":"hello"}]}]}`)
+	var out2 map[string]any
+	json.Unmarshal(data2, &out2)
+	if n := len(out2["output"].([]any)); n != 1 {
+		t.Fatalf("plain request should have single message item, got %d: %s", n, data2)
+	}
+}
+
+func TestResponsesStreamEvents(t *testing.T) {
+	ts := newTestServer()
+	defer ts.Close()
+
+	resp, data := postJSON(t, ts.URL+"/v1/responses",
+		`{"model":"gpt-5.5","stream":true,"reasoning":{"effort":"low"},"input":"hi"}`)
+	if resp.Header.Get("Content-Type") != "text/event-stream" {
+		t.Fatalf("want SSE content type, got %s", resp.Header.Get("Content-Type"))
+	}
+	s := string(data)
+	for _, want := range []string{
+		"event: response.created",
+		"event: response.in_progress",
+		"event: response.reasoning_summary_text.delta",
+		"event: response.output_item.added",
+		"event: response.content_part.added",
+		"event: response.output_text.delta",
+		"event: response.output_text.done",
+		"event: response.output_item.done",
+		"event: response.completed",
+	} {
+		if !strings.Contains(s, want) {
+			t.Fatalf("responses stream missing %q: %s", want, s)
+		}
+	}
+	// reasoning 增量必须先于正文增量。
+	if strings.Index(s, "reasoning_summary_text.delta") > strings.Index(s, "output_text.delta") {
+		t.Fatalf("reasoning deltas must precede text deltas: %s", s)
+	}
+	// Responses 流以 response.completed 收尾，不使用 [DONE] 哨兵。
+	if strings.Contains(s, "data: [DONE]") {
+		t.Fatalf("responses stream must not emit [DONE]: %s", s)
+	}
+}
+
 func TestModelsListCoversPopularModels(t *testing.T) {
 	ts := newTestServer()
 	defer ts.Close()

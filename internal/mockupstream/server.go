@@ -134,6 +134,8 @@ func (s *Server) dispatch(w http.ResponseWriter, r *http.Request) {
 	// --- OpenAI-compatible (§2.1) ---
 	case strings.HasSuffix(path, "/chat/completions"):
 		s.handleChatCompletions(w, r)
+	case strings.HasSuffix(path, "/responses"):
+		s.handleResponses(w, r)
 	case strings.HasSuffix(path, "/embeddings"):
 		s.handleEmbeddings(w, r)
 	case strings.HasSuffix(path, "/images/generations"):

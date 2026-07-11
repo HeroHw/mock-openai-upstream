@@ -66,7 +66,7 @@ APIKey:  任意非空字符串（默认不校验，除非 MOCK_REQUIRE_KEY=1）
 
 | 协议 | 端点 |
 |------|------|
-| OpenAI 兼容 | `/v1/chat/completions`（SSE）、`/v1/embeddings`、`/v1/images/generations`·`/edits`·`/variations`、`/v1/videos/generations`·`/edits`、`/v1/audio/speech`·`/transcriptions`、`/v1/models` |
+| OpenAI 兼容 | `/v1/chat/completions`（SSE）、`/v1/responses`（Responses API，具名事件帧 SSE）、`/v1/embeddings`、`/v1/images/generations`·`/edits`·`/variations`、`/v1/videos/generations`·`/edits`、`/v1/audio/speech`·`/transcriptions`、`/v1/models` |
 | Anthropic | `/v1/messages`（具名事件帧 SSE，支持 extended thinking） |
 | Gemini | `/v1beta/models/{model}:generateContent`·`:streamGenerateContent`·`:countTokens`（TTS 模型返回 `inlineData` 音频） |
 | DashScope（异步） | `POST .../{text2image,image2image}/image-synthesis`、`POST .../{video-generation,image2video}/video-synthesis`（覆盖 wan2.x / happyhorse 全系）、`GET /api/v1/tasks/{id}` |
@@ -84,7 +84,7 @@ APIKey:  任意非空字符串（默认不校验，除非 MOCK_REQUIRE_KEY=1）
 - 请求带 `"enable_thinking": true`（Qwen/DashScope 风格）；
 - 请求带 `"thinking": {"type": "enabled"}`（豆包 doubao-seed / 智谱 glm-5.x / Anthropic 风格）。
 
-OpenAI 兼容与智谱端点在 message/delta 里输出 `reasoning_content`；Anthropic 端点输出 `thinking` 内容块（流式为 `thinking_delta` + `signature_delta` 事件，text 块 index 顺延）。思考文本固定，便于断言。
+OpenAI 兼容与智谱端点在 message/delta 里输出 `reasoning_content`；Anthropic 端点输出 `thinking` 内容块（流式为 `thinking_delta` + `signature_delta` 事件，text 块 index 顺延）；`/v1/responses` 请求带 `"reasoning": {...}` 时，output 数组多一个 `reasoning` 项（流式先发 `response.reasoning_summary_text.delta`），usage 带 `output_tokens_details.reasoning_tokens`。思考文本固定，便于断言。
 
 `/v1/models` 返回覆盖各厂商热门模型的静态列表（gpt-5.5、claude-fable-5、deepseek-v3.1、qwen-turbo-thinking、kimi-k2.7-code、glm-5.2、doubao-seed-2-0-pro-260215、gpt-image-2、wan2.6-t2i、doubao-seedream-5-0-260128、gpt-4o-mini-tts、gemini-3.1-flash-tts-preview、wan2.7 全系、happyhorse-1.1 全系、MiniMax-Hailuo-2.3 等）。
 
