@@ -13,6 +13,10 @@ import (
 func newTestServer() *httptest.Server {
 	cfg := defaults()
 	cfg.TokenInterval = 0 // fast streaming in tests
+	cfg.TTFTMin = 0
+	cfg.TTFTMax = 0
+	cfg.LatencyMin = 0
+	cfg.LatencyMax = 0
 	cfg.ImageSyncDelayMin = 0
 	cfg.ImageSyncDelayMax = 0
 	cfg.VideoSyncDelayMin = 0

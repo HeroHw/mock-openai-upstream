@@ -89,13 +89,26 @@ func (s *Server) dispatch(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Path
 
 	switch {
-	// --- DashScope async image/video (§8) ---
+	// --- DashScope async image/video (§8). Matching on the bare
+	// `/image-synthesis` / `/video-synthesis` suffix (not the full service
+	// path) covers every wanx/wan2.x service family: text2image, image2image
+	// (wan2.6-image 图生图), video-generation (wan2.7-t2v), image2video
+	// (wan2.7-i2v / happyhorse-1.1-i2v·r2v) and video editing. ---
 	case strings.HasPrefix(path, "/api/v1/tasks/"):
 		s.handleTaskQuery(w, r)
-	case strings.HasSuffix(path, "/text2image/image-synthesis"):
+	case strings.HasSuffix(path, "/image-synthesis"):
 		s.handleDashScopeSubmit(w, r, taskKindImage)
-	case strings.HasSuffix(path, "/video-generation/video-synthesis"):
+	case strings.HasSuffix(path, "/video-synthesis"):
 		s.handleDashScopeSubmit(w, r, taskKindVideo)
+
+	// --- MiniMax Hailuo async video. `/query/video_generation` must match
+	// before the bare `/video_generation` submit suffix. ---
+	case strings.HasSuffix(path, "/query/video_generation"):
+		s.handleMiniMaxVideoQuery(w, r)
+	case strings.HasSuffix(path, "/video_generation"):
+		s.handleMiniMaxVideoSubmit(w, r)
+	case strings.HasSuffix(path, "/files/retrieve"):
+		s.handleMiniMaxFileRetrieve(w, r)
 
 	// --- Gemini native (§2.3): /v1beta/models/{model}:{action} ---
 	case strings.Contains(path, "/models/") && strings.Contains(path, ":"):

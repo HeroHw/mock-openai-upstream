@@ -77,21 +77,33 @@ func (s *Server) handleAnthropicMessages(w http.ResponseWriter, r *http.Request)
 	reply := s.replyText()
 	pt, ct, _ := s.usage(prompt, reply)
 	msgID := fmt.Sprintf("msg-mock-%d", n)
+	// Extended thinking（claude-fable-5 / claude-opus-4-8）：请求携带
+	// {"thinking":{"type":"enabled",...}} 时，回包在 text 块前多一个 thinking 块。
+	thinking := wantsReasoning(model, req)
 
 	if boolField(req, "stream", false) {
-		s.streamAnthropic(w, r, msgID, model, reply, pt, ct)
+		s.streamAnthropic(w, r, msgID, model, reply, pt, ct, thinking)
 		return
 	}
 
 	if !sleepCtx(randomDelay(msgID, s.cfg.LatencyMin, s.cfg.LatencyMax), clientGone(r)) {
 		return
 	}
+	content := []any{}
+	if thinking {
+		content = append(content, map[string]any{
+			"type":      "thinking",
+			"thinking":  mockReasoningText,
+			"signature": "mock-signature",
+		})
+	}
+	content = append(content, map[string]any{"type": "text", "text": reply})
 	writeJSON(w, http.StatusOK, map[string]any{
 		"id":            msgID,
 		"type":          "message",
 		"role":          "assistant",
 		"model":         model,
-		"content":       []any{map[string]any{"type": "text", "text": reply}},
+		"content":       content,
 		"stop_reason":   "end_turn",
 		"stop_sequence": nil,
 		"usage":         s.anthropicUsage(pt, ct),
@@ -99,9 +111,10 @@ func (s *Server) handleAnthropicMessages(w http.ResponseWriter, r *http.Request)
 }
 
 // streamAnthropic emits the Anthropic streaming event sequence: message_start,
-// content_block_start, content_block_delta (per token), content_block_stop,
-// message_delta (with usage), message_stop (doc §5.3).
-func (s *Server) streamAnthropic(w http.ResponseWriter, r *http.Request, msgID, model, reply string, pt, ct int) {
+// [thinking block: content_block_start/delta(thinking_delta)/stop,] then the
+// text block content_block_start, content_block_delta (per token),
+// content_block_stop, message_delta (with usage), message_stop (doc §5.3).
+func (s *Server) streamAnthropic(w http.ResponseWriter, r *http.Request, msgID, model, reply string, pt, ct int, thinking bool) {
 	sse, ok := newSSE(w)
 	if !ok {
 		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
@@ -130,9 +143,48 @@ func (s *Server) streamAnthropic(w http.ResponseWriter, r *http.Request, msgID, 
 		return
 	}
 
+	// The text block index shifts to 1 when a thinking block occupies index 0.
+	textIndex := 0
+	if thinking {
+		textIndex = 1
+		thinkStart, _ := json.Marshal(map[string]any{
+			"type":          "content_block_start",
+			"index":         0,
+			"content_block": map[string]any{"type": "thinking", "thinking": ""},
+		})
+		if sse.event("content_block_start", string(thinkStart)) != nil {
+			return
+		}
+		for _, tok := range splitTokens(mockReasoningText) {
+			if !sleepCtx(s.cfg.TokenInterval, done) {
+				return
+			}
+			delta, _ := json.Marshal(map[string]any{
+				"type":  "content_block_delta",
+				"index": 0,
+				"delta": map[string]any{"type": "thinking_delta", "thinking": tok},
+			})
+			if sse.event("content_block_delta", string(delta)) != nil {
+				return
+			}
+		}
+		sig, _ := json.Marshal(map[string]any{
+			"type":  "content_block_delta",
+			"index": 0,
+			"delta": map[string]any{"type": "signature_delta", "signature": "mock-signature"},
+		})
+		if sse.event("content_block_delta", string(sig)) != nil {
+			return
+		}
+		thinkStop, _ := json.Marshal(map[string]any{"type": "content_block_stop", "index": 0})
+		if sse.event("content_block_stop", string(thinkStop)) != nil {
+			return
+		}
+	}
+
 	blockStart, _ := json.Marshal(map[string]any{
 		"type":          "content_block_start",
-		"index":         0,
+		"index":         textIndex,
 		"content_block": map[string]any{"type": "text", "text": ""},
 	})
 	if sse.event("content_block_start", string(blockStart)) != nil {
@@ -145,7 +197,7 @@ func (s *Server) streamAnthropic(w http.ResponseWriter, r *http.Request, msgID, 
 		}
 		delta, _ := json.Marshal(map[string]any{
 			"type":  "content_block_delta",
-			"index": 0,
+			"index": textIndex,
 			"delta": map[string]any{"type": "text_delta", "text": tok},
 		})
 		if sse.event("content_block_delta", string(delta)) != nil {
@@ -153,7 +205,7 @@ func (s *Server) streamAnthropic(w http.ResponseWriter, r *http.Request, msgID, 
 		}
 	}
 
-	blockStop, _ := json.Marshal(map[string]any{"type": "content_block_stop", "index": 0})
+	blockStop, _ := json.Marshal(map[string]any{"type": "content_block_stop", "index": textIndex})
 	if sse.event("content_block_stop", string(blockStop)) != nil {
 		return
 	}

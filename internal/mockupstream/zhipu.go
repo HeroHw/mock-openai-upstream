@@ -53,9 +53,12 @@ func (s *Server) handleZhipuChat(w http.ResponseWriter, r *http.Request) {
 
 	prompt := extractPrompt(req)
 	reply := s.replyText()
+	// glm-5.x 系列支持 thinking 参数（{"thinking":{"type":"enabled"}}），
+	// 开启后回包携带 reasoning_content。
+	reasoning := wantsReasoning(model, req)
 
 	if boolField(req, "stream", false) {
-		s.streamZhipuChat(w, r, model, prompt, reply, includeUsage(req))
+		s.streamZhipuChat(w, r, model, prompt, reply, includeUsage(req), reasoning)
 		return
 	}
 
@@ -66,6 +69,10 @@ func (s *Server) handleZhipuChat(w http.ResponseWriter, r *http.Request) {
 	}
 	pt, ct, tt := s.usage(prompt, reply)
 	id := zhipuID(n)
+	message := map[string]any{"role": "assistant", "content": reply}
+	if reasoning {
+		message["reasoning_content"] = mockReasoningText
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"id":         id,
 		"request_id": id,
@@ -74,7 +81,7 @@ func (s *Server) handleZhipuChat(w http.ResponseWriter, r *http.Request) {
 		"choices": []any{
 			map[string]any{
 				"index":         0,
-				"message":       map[string]any{"role": "assistant", "content": reply},
+				"message":       message,
 				"finish_reason": "stop",
 			},
 		},
@@ -88,8 +95,9 @@ func (s *Server) handleZhipuChat(w http.ResponseWriter, r *http.Request) {
 
 // streamZhipuChat emits GLM streaming chunks. Zhipu's SSE stream is byte-for-byte
 // the OpenAI chat.completion.chunk shape, so we reuse chunkJSON; only the id
-// convention differs.
-func (s *Server) streamZhipuChat(w http.ResponseWriter, r *http.Request, model, prompt, reply string, wantUsage bool) {
+// convention differs. With thinking enabled, reasoning_content deltas precede
+// the content deltas (glm-5.x).
+func (s *Server) streamZhipuChat(w http.ResponseWriter, r *http.Request, model, prompt, reply string, wantUsage, reasoning bool) {
 	sse, ok := newSSE(w)
 	if !ok {
 		openAIError(w, http.StatusInternalServerError, "server_error", "streaming unsupported", "internal_error")
@@ -107,6 +115,18 @@ func (s *Server) streamZhipuChat(w http.ResponseWriter, r *http.Request, model, 
 	// Initial role delta.
 	if sse.data(chunkJSON(id, model, map[string]any{"role": "assistant"}, nil)) != nil {
 		return
+	}
+
+	// Thinking phase before content, mirroring the real glm-5.x stream.
+	if reasoning {
+		for _, tok := range splitTokens(mockReasoningText) {
+			if !sleepCtx(s.cfg.TokenInterval, done) {
+				return
+			}
+			if sse.data(chunkJSON(id, model, map[string]any{"reasoning_content": tok}, nil)) != nil {
+				return
+			}
+		}
 	}
 
 	for _, tok := range splitTokens(reply) {

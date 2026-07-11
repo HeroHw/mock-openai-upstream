@@ -63,9 +63,10 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 
 	prompt := extractPrompt(req)
 	reply := s.replyText()
+	reasoning := wantsReasoning(model, req)
 
 	if boolField(req, "stream", false) {
-		s.streamChat(w, r, model, prompt, reply, includeUsage(req))
+		s.streamChat(w, r, model, prompt, reply, includeUsage(req), reasoning)
 		return
 	}
 
@@ -75,6 +76,12 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 		return // client disconnected
 	}
 	pt, ct, tt := s.usage(prompt, reply)
+	message := map[string]any{"role": "assistant", "content": reply}
+	if reasoning {
+		// deepseek-v3.1 / qwen-*-thinking / doubao-seed 等思考模型在回包里
+		// 额外携带 reasoning_content。
+		message["reasoning_content"] = mockReasoningText
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"id":      fmt.Sprintf("chatcmpl-mock-%d", n),
 		"object":  "chat.completion",
@@ -83,7 +90,7 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 		"choices": []any{
 			map[string]any{
 				"index":         0,
-				"message":       map[string]any{"role": "assistant", "content": reply},
+				"message":       message,
 				"finish_reason": "stop",
 			},
 		},
@@ -96,9 +103,10 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 }
 
 // streamChat emits OpenAI chat.completion.chunk SSE frames: an initial role
-// delta, one content delta per token at the configured interval, a finish
-// frame, an optional usage frame, then [DONE] (doc §5.2).
-func (s *Server) streamChat(w http.ResponseWriter, r *http.Request, model, prompt, reply string, wantUsage bool) {
+// delta, optional reasoning_content deltas (thinking models), one content delta
+// per token at the configured interval, a finish frame, an optional usage
+// frame, then [DONE] (doc §5.2).
+func (s *Server) streamChat(w http.ResponseWriter, r *http.Request, model, prompt, reply string, wantUsage, reasoning bool) {
 	sse, ok := newSSE(w)
 	if !ok {
 		openAIError(w, http.StatusInternalServerError, "server_error", "streaming unsupported", "internal_error")
@@ -116,6 +124,19 @@ func (s *Server) streamChat(w http.ResponseWriter, r *http.Request, model, promp
 	// Initial role delta.
 	if sse.data(chunkJSON(id, model, map[string]any{"role": "assistant"}, nil)) != nil {
 		return
+	}
+
+	// Thinking phase: stream the reasoning text as reasoning_content deltas
+	// before any content, matching deepseek/qwen-thinking/doubao streams.
+	if reasoning {
+		for _, tok := range splitTokens(mockReasoningText) {
+			if !sleepCtx(s.cfg.TokenInterval, done) {
+				return
+			}
+			if sse.data(chunkJSON(id, model, map[string]any{"reasoning_content": tok}, nil)) != nil {
+				return
+			}
+		}
 	}
 
 	for _, tok := range splitTokens(reply) {

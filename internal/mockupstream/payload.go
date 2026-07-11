@@ -48,6 +48,28 @@ func (s *Server) replyText() string {
 	return s.cfg.ReplyText
 }
 
+// mockReasoningText is the fixed chain-of-thought stand-in returned as
+// reasoning_content for thinking-capable models (deepseek-v3.1、qwen-*-thinking、
+// glm-5.x、doubao-seed-* 等)。固定文本便于断言。
+const mockReasoningText = "Mock reasoning: thinking step by step before answering."
+
+// wantsReasoning reports whether a chat request should carry reasoning_content.
+// 命中任一条件即开启：模型名含 thinking/reasoner；请求带 enable_thinking=true
+// （Qwen/DashScope 风格）；或 thinking.type == "enabled"（豆包/智谱风格）。
+func wantsReasoning(model string, req map[string]any) bool {
+	lower := strings.ToLower(model)
+	if strings.Contains(lower, "thinking") || strings.Contains(lower, "reasoner") {
+		return true
+	}
+	if boolField(req, "enable_thinking", false) {
+		return true
+	}
+	if th, ok := req["thinking"].(map[string]any); ok {
+		return strField(th, "type", "") == "enabled"
+	}
+	return false
+}
+
 // splitTokens breaks reply text into stream chunks. We split on whitespace but
 // keep the trailing space on each piece so concatenating the deltas reproduces
 // the original text exactly — matching how real providers emit word-ish chunks.

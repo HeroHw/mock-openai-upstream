@@ -67,13 +67,26 @@ APIKey:  任意非空字符串（默认不校验，除非 MOCK_REQUIRE_KEY=1）
 | 协议 | 端点 |
 |------|------|
 | OpenAI 兼容 | `/v1/chat/completions`（SSE）、`/v1/embeddings`、`/v1/images/generations`·`/edits`·`/variations`、`/v1/videos/generations`·`/edits`、`/v1/audio/speech`·`/transcriptions`、`/v1/models` |
-| Anthropic | `/v1/messages`（具名事件帧 SSE） |
-| Gemini | `/v1beta/models/{model}:generateContent`·`:streamGenerateContent`·`:countTokens` |
-| DashScope（异步） | `POST .../text2image/image-synthesis`、`POST .../video-generation/video-synthesis`、`GET /api/v1/tasks/{id}` |
+| Anthropic | `/v1/messages`（具名事件帧 SSE，支持 extended thinking） |
+| Gemini | `/v1beta/models/{model}:generateContent`·`:streamGenerateContent`·`:countTokens`（TTS 模型返回 `inlineData` 音频） |
+| DashScope（异步） | `POST .../{text2image,image2image}/image-synthesis`、`POST .../{video-generation,image2video}/video-synthesis`（覆盖 wan2.x / happyhorse 全系）、`GET /api/v1/tasks/{id}` |
 | 智谱 GLM | `/api/paas/v4/chat/completions`（SSE）、`/api/paas/v4/images/generations`（同步）、`POST /api/paas/v4/videos/generations`（异步提交，CogVideoX）、`GET /api/paas/v4/async-result/{id}`（轮询，返回 `video_result`） |
+| MiniMax 海螺（异步） | `POST /v1/video_generation`（提交）、`GET /v1/query/video_generation?task_id=`（轮询）、`GET /v1/files/retrieve?file_id=`（成功后取 `download_url`） |
 | 内部 | `/__assets/{mock-image.png,mock-video.mp4}`、`/__mock/healthz` |
 
 路径按后缀匹配，所以 `BaseURL` 带不带 `/v1` 前缀都能正确路由。
+
+### 思考模型（reasoning_content / thinking）
+
+命中以下任一条件时，chat 回包（含流式）在正文前额外携带思考内容：
+
+- 模型名含 `thinking` / `reasoner`（如 `qwen-plus-thinking`、`deepseek-reasoner`）；
+- 请求带 `"enable_thinking": true`（Qwen/DashScope 风格）；
+- 请求带 `"thinking": {"type": "enabled"}`（豆包 doubao-seed / 智谱 glm-5.x / Anthropic 风格）。
+
+OpenAI 兼容与智谱端点在 message/delta 里输出 `reasoning_content`；Anthropic 端点输出 `thinking` 内容块（流式为 `thinking_delta` + `signature_delta` 事件，text 块 index 顺延）。思考文本固定，便于断言。
+
+`/v1/models` 返回覆盖各厂商热门模型的静态列表（gpt-5.5、claude-fable-5、deepseek-v3.1、qwen-turbo-thinking、kimi-k2.7-code、glm-5.2、doubao-seed-2-0-pro-260215、gpt-image-2、wan2.6-t2i、doubao-seedream-5-0-260128、gpt-4o-mini-tts、gemini-3.1-flash-tts-preview、wan2.7 全系、happyhorse-1.1 全系、MiniMax-Hailuo-2.3 等）。
 
 ## 配置（环境变量）
 
@@ -128,6 +141,7 @@ curl "localhost:18080/v1beta/models/gemini-pro:generateContent?key=sk-mock-secre
 - **同步（OpenAI）**：一个 POST 挂住连接，等 `*_SYNC_DELAY_S`（默认 60s）后在**同一响应**里返回结果。把延时设到大于网关超时，即可主动触发超时分支演练。
 - **异步（DashScope）**：提交瞬间返回 `task_id` + `PENDING`，耗时进入按时间计算的状态机，轮询 `/api/v1/tasks/{id}` 在 `*_DURATION_S` 后才翻成 `SUCCEEDED`。视频有并发上限，超出的任务排队为 `PENDING`。
 - **异步（智谱 CogVideoX）**：同一套时间状态机，但走智谱信封——提交返回 `id` + `PROCESSING`，轮询 `/api/paas/v4/async-result/{id}`，完成后翻成 `SUCCESS` 并带 `video_result`（含 `url`、`cover_image_url`），失败为 `FAIL`。
+- **异步（MiniMax 海螺）**：同一套时间状态机，走 MiniMax 信封——提交 `/v1/video_generation` 返回 `task_id`（`base_resp.status_code=0`），轮询 `/v1/query/video_generation?task_id=` 状态为 `Queueing`/`Processing`/`Success`/`Fail`，成功后拿 `file_id` 到 `/v1/files/retrieve?file_id=` 换取 `download_url`。
 
 快速联调时把时长缩短，免等 60s：
 

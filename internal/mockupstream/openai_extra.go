@@ -99,16 +99,54 @@ func (s *Server) handleAudioTranscription(w http.ResponseWriter, r *http.Request
 	})
 }
 
-// handleModels returns a small static model list (doc §2.1).
+// handleModels returns a static model list covering the popular models of each
+// provider family the mock emulates (doc §2.1).
 func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
-	ids := []string{"mock-model", "mock-embedding", "mock-image", "mock-video"}
-	data := make([]any, 0, len(ids))
-	for _, id := range ids {
+	type entry struct{ id, ownedBy string }
+	models := []entry{
+		// 语言模型（chat）
+		{"gpt-5.5", "openai"},
+		{"gpt-5.4", "openai"},
+		{"claude-fable-5", "anthropic"},
+		{"claude-opus-4-8", "anthropic"},
+		{"dj-claude-sonnet-4-6", "anthropic"},
+		{"deepseek-v3.1", "deepseek"},
+		{"deepseek-chat", "deepseek"},
+		{"qwen-turbo-thinking", "alibaba"},
+		{"qwen-plus-thinking", "alibaba"},
+		{"kimi-k2.7-code", "moonshot"},
+		{"glm-5.2", "zhipu"},
+		{"glm-5.1", "zhipu"},
+		{"doubao-seed-2-0-pro-260215", "bytedance"},
+		// 生图模型
+		{"gpt-image-2", "openai"},
+		{"wan2.6-t2i", "alibaba"},
+		{"wan2.6-image", "alibaba"},
+		{"doubao-seedream-5-0-260128", "bytedance"},
+		// 音频模型
+		{"gpt-4o-mini-tts", "openai"},
+		{"gemini-3.1-flash-tts-preview", "google"},
+		// 视频模型
+		{"wan2.7-i2v", "alibaba"},
+		{"wan2.7-t2v", "alibaba"},
+		{"wan2.7-videoedit", "alibaba"},
+		{"happyhorse-1.1-i2v", "alibaba"},
+		{"happyhorse-1.1-r2v", "alibaba"},
+		{"happyhorse-1.1-t2v", "alibaba"},
+		{"MiniMax-Hailuo-2.3", "minimax"},
+		// 兜底通用名（既有测试/夹具在用）
+		{"mock-model", "mockupstream"},
+		{"mock-embedding", "mockupstream"},
+		{"mock-image", "mockupstream"},
+		{"mock-video", "mockupstream"},
+	}
+	data := make([]any, 0, len(models))
+	for _, m := range models {
 		data = append(data, map[string]any{
-			"id":       id,
+			"id":       m.id,
 			"object":   "model",
 			"created":  0,
-			"owned_by": "mockupstream",
+			"owned_by": m.ownedBy,
 		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
