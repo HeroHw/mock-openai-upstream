@@ -97,22 +97,22 @@ func (s *Server) serveSyncMedia(w http.ResponseWriter, r *http.Request, minDelay
 }
 
 // writeMediaJSON streams the sync image/video response. It deliberately avoids
-// the generic map + json.Encode path (writeJSON): for the b64 flow that path
-// buffers the whole ~10MB payload and scans every byte for escaping, which under
-// concurrency blows up memory (one ~10MB encode buffer per in-flight request)
-// and CPU. Here the large base64 payload is written straight from a shared
-// read-only []byte — never copied into a per-request buffer — and only the
-// small, possibly-unsafe fields (url, prompt) are JSON-escaped. Content-Length
-// is set so load tests don't pay for chunked encoding.
+// the generic map + json.Encode path (writeJSON): the base64 payload (a real
+// PNG/MP4, potentially megabytes with MOCK_ASSETS_DIR overrides) would be
+// buffered and escape-scanned per request, which under concurrency blows up
+// memory and CPU. Here the payload is written straight from a shared read-only
+// []byte — never copied into a per-request buffer — and only the small,
+// possibly-unsafe fields (url, prompt) are JSON-escaped. Content-Length is set
+// so load tests don't pay for chunked encoding.
 func (s *Server) writeMediaJSON(w http.ResponseWriter, r *http.Request, n int, b64, isVideo bool, prompt, asset string) {
-	// The large payload: shared []byte for the big image, small literal for mp4.
-	// base64 text needs no JSON escaping, so it is written verbatim.
+	// The large payload: shared base64 of the real built-in (or overridden)
+	// media. base64 text needs no JSON escaping, so it is written verbatim.
 	var payload []byte
 	if b64 {
 		if isVideo {
-			payload = []byte(mockMP4Base64)
+			payload = s.assets.mp4B64
 		} else {
-			payload = mockBigB64Bytes
+			payload = s.assets.pngB64
 		}
 	}
 	urlQuoted, _ := json.Marshal(s.assetURL(r, asset)) // quoted + escaped

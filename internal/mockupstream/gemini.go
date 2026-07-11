@@ -117,7 +117,7 @@ func (s *Server) handleGemini(w http.ResponseWriter, r *http.Request) {
 		// TTS（gemini-3.1-flash-tts-preview）：candidates 里的 part 是
 		// inlineData 音频而非 text。
 		if geminiWantsAudio(model, req) {
-			writeJSON(w, http.StatusOK, geminiAudioResponse(model, pt))
+			writeJSON(w, http.StatusOK, s.geminiAudioResponse(model, pt))
 			return
 		}
 		writeJSON(w, http.StatusOK, geminiResponse(model, reply, pt, ct))
@@ -125,9 +125,9 @@ func (s *Server) handleGemini(w http.ResponseWriter, r *http.Request) {
 }
 
 // geminiAudioResponse builds a TTS generateContent body: the single candidate
-// part carries base64 PCM via inlineData (we reuse the placeholder MP4 bytes —
-// the gateway only needs a decodable non-empty payload).
-func geminiAudioResponse(model string, pt int) map[string]any {
+// part carries the built-in sine-wave WAV (real, playable audio) as base64 via
+// inlineData.
+func (s *Server) geminiAudioResponse(model string, pt int) map[string]any {
 	return map[string]any{
 		"candidates": []any{
 			map[string]any{
@@ -135,8 +135,8 @@ func geminiAudioResponse(model string, pt int) map[string]any {
 					"role": "model",
 					"parts": []any{map[string]any{
 						"inlineData": map[string]any{
-							"mimeType": "audio/L16;codec=pcm;rate=24000",
-							"data":     mockMP4Base64,
+							"mimeType": "audio/wav",
+							"data":     string(s.assets.wavB64),
 						},
 					}},
 				},

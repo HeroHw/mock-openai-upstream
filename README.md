@@ -72,7 +72,7 @@ APIKey:  任意非空字符串（默认不校验，除非 MOCK_REQUIRE_KEY=1）
 | DashScope（异步） | `POST .../{text2image,image2image}/image-synthesis`、`POST .../{video-generation,image2video}/video-synthesis`（覆盖 wan2.x / happyhorse 全系）、`GET /api/v1/tasks/{id}` |
 | 智谱 GLM | `/api/paas/v4/chat/completions`（SSE）、`/api/paas/v4/images/generations`（同步）、`POST /api/paas/v4/videos/generations`（异步提交，CogVideoX）、`GET /api/paas/v4/async-result/{id}`（轮询，返回 `video_result`） |
 | MiniMax 海螺（异步） | `POST /v1/video_generation`（提交）、`GET /v1/query/video_generation?task_id=`（轮询）、`GET /v1/files/retrieve?file_id=`（成功后取 `download_url`） |
-| 内部 | `/__assets/{mock-image.png,mock-video.mp4}`、`/__mock/healthz` |
+| 内部 | `/__assets/{mock-image.png,mock-video.mp4,mock-audio.wav}`、`/__mock/healthz` |
 
 路径按后缀匹配，所以 `BaseURL` 带不带 `/v1` 前缀都能正确路由。
 
@@ -87,6 +87,25 @@ APIKey:  任意非空字符串（默认不校验，除非 MOCK_REQUIRE_KEY=1）
 OpenAI 兼容与智谱端点在 message/delta 里输出 `reasoning_content`；Anthropic 端点输出 `thinking` 内容块（流式为 `thinking_delta` + `signature_delta` 事件，text 块 index 顺延）；`/v1/responses` 请求带 `"reasoning": {...}` 时，output 数组多一个 `reasoning` 项（流式先发 `response.reasoning_summary_text.delta`），usage 带 `output_tokens_details.reasoning_tokens`。思考文本固定，便于断言。
 
 `/v1/models` 返回覆盖各厂商热门模型的静态列表（gpt-5.5、claude-fable-5、deepseek-v3.1、qwen-turbo-thinking、kimi-k2.7-code、glm-5.2、doubao-seed-2-0-pro-260215、gpt-image-2、wan2.6-t2i、doubao-seedream-5-0-260128、gpt-4o-mini-tts、gemini-3.1-flash-tts-preview、wan2.7 全系、happyhorse-1.1 全系、MiniMax-Hailuo-2.3 等）。
+
+### 媒体资产：真实可播放的数据
+
+`/__assets/` 下的三种素材都是**真实可解码/可播放**的数据，而非仅结构合法的空壳：
+
+| 资产 | 内容 | 来源 |
+|------|------|------|
+| `mock-image.png` | 512×512 渐变测试卡（带网格线） | 启动时用标准库 `image/png` 生成，确定性 |
+| `mock-audio.wav` | 440Hz 正弦波 2 秒（16-bit/24kHz 单声道，约 94KB） | 启动时生成，确定性 |
+| `mock-video.mp4` | Big Buck Bunny 10 秒 H.264 片段（360p，约 1MB） | `go:embed` 内嵌（CC-BY，取自 test-videos.co.uk） |
+
+引用它们的所有链路都拿到真数据：同步/异步生图生视频的 `url`、`b64_json`（可 base64 解码回真实 PNG/MP4）、`/v1/audio/speech` 的音频字节、Gemini TTS 的 `inlineData`、MiniMax 的 `download_url`。
+
+想换成自己的素材：设 `MOCK_ASSETS_DIR` 指向一个目录，放入同名文件即可逐个覆盖（缺的文件继续用内置），无需重新编译：
+
+```bash
+MOCK_ASSETS_DIR=./my-assets go run ./cmd/mockupstream
+# my-assets/mock-video.mp4 存在 → 视频用你的；图片/音频没放 → 用内置
+```
 
 ## 配置（环境变量）
 
@@ -110,6 +129,7 @@ OpenAI 兼容与智谱端点在 message/delta 里输出 `reasoning_content`；An
 | `MOCK_TASK_FAIL_RATE` | `0` | 异步失败注入（按 task_id 哈希，确定性） |
 | `MOCK_REQUIRE_KEY` | `false` | 要求非空凭据（Authorization / x-api-key / ?key=），但不校验具体值 |
 | `MOCK_API_KEY` | 空 | 设置后强制校验：凭据必须**等于**此固定值（常量时间比较），否则返回 401 |
+| `MOCK_ASSETS_DIR` | 空 | 真实素材目录；内含 `mock-image.png`/`mock-video.mp4`/`mock-audio.wav` 时逐个覆盖内置资产 |
 
 ### 鉴权说明
 

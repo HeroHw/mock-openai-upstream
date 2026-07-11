@@ -76,16 +76,16 @@ func deterministicVector(text string) []float64 {
 	return vec
 }
 
-// handleAudioSpeech (TTS) returns audio bytes. We reuse the placeholder MP4 as
-// stand-in audio; the gateway only needs a non-empty audio byte stream.
+// handleAudioSpeech (TTS) returns real playable audio bytes: the built-in
+// 440Hz sine WAV (or the MOCK_ASSETS_DIR override).
 func (s *Server) handleAudioSpeech(w http.ResponseWriter, r *http.Request) {
 	if !sleepCtx(randomDelay("audio-speech", s.cfg.LatencyMin, s.cfg.LatencyMax), clientGone(r)) {
 		return
 	}
-	w.Header().Set("Content-Type", "audio/mpeg")
-	w.Header().Set("Content-Length", itoa(len(mockMP4)))
+	w.Header().Set("Content-Type", "audio/wav")
+	w.Header().Set("Content-Length", itoa(len(s.assets.wav)))
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(mockMP4)
+	_, _ = w.Write(s.assets.wav)
 }
 
 // handleAudioTranscription (STT) accepts a multipart upload and returns a

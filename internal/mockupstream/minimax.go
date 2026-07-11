@@ -107,7 +107,7 @@ func (s *Server) handleMiniMaxFileRetrieve(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, http.StatusOK, map[string]any{
 		"file": map[string]any{
 			"file_id":      fileID,
-			"bytes":        len(mockMP4),
+			"bytes":        len(s.assets.mp4),
 			"filename":     "mock-video.mp4",
 			"download_url": s.assetURL(r, "mock-video.mp4"),
 		},

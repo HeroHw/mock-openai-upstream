@@ -14,6 +14,9 @@
                                     //   留空字符串则不开启固定值校验
   "require_key": false,             // 要求非空凭据但不校验具体值，对应 MOCK_REQUIRE_KEY；
                                     //   设了 api_key 时本项可忽略（已隐含开启校验）
+  "assets_dir": "",                 // 真实素材目录，对应 MOCK_ASSETS_DIR；目录内放同名文件即覆盖内置资产：
+                                    //   mock-image.png / mock-video.mp4 / mock-audio.wav；
+                                    //   留空则用内置真实资产（生成的测试图 PNG、正弦波 WAV、内嵌 Big Buck Bunny MP4）
 
   // ── chat 类通用行为 ──
   "ttft_min_ms": 1000,              // SSE 首帧前等待最小毫秒数，模拟上游思考时间，对应 MOCK_TTFT_MIN_MS

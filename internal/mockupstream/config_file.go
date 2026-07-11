@@ -43,6 +43,7 @@ type fileConfig struct {
 
 	RequireKey *bool   `json:"require_key"` // 要求非空凭据但不校验具体值
 	APIKey     *string `json:"api_key"`     // 固定 Bearer 校验值
+	AssetsDir  *string `json:"assets_dir"`  // 真实素材目录（mock-image.png / mock-video.mp4 / mock-audio.wav）
 }
 
 // applyFile reads a JSON config file and overlays any present fields onto cfg.
@@ -86,6 +87,7 @@ func applyFile(cfg *Config, path string) error {
 
 	setBool(&cfg.RequireKey, fc.RequireKey)
 	setStr(&cfg.APIKey, fc.APIKey)
+	setStr(&cfg.AssetsDir, fc.AssetsDir)
 	return nil
 }
 
@@ -120,6 +122,7 @@ func applyEnv(cfg *Config) {
 
 	cfg.RequireKey = envBool("MOCK_REQUIRE_KEY", cfg.RequireKey)
 	cfg.APIKey = envStr("MOCK_API_KEY", cfg.APIKey)
+	cfg.AssetsDir = envStr("MOCK_ASSETS_DIR", cfg.AssetsDir)
 }
 
 // --- file overlay setters: apply only when the pointer is non-nil ---

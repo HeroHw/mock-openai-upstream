@@ -11,15 +11,17 @@ import (
 // protocol handler (doc §3). It carries config and the async task queue; there
 // is no DB and no external dependency — everything lives in memory.
 type Server struct {
-	cfg   Config
-	queue *TaskQueue
+	cfg    Config
+	queue  *TaskQueue
+	assets *assetStore
 }
 
 // NewServer constructs a Server with the given config.
 func NewServer(cfg Config) *Server {
 	return &Server{
-		cfg:   cfg,
-		queue: NewTaskQueue(cfg),
+		cfg:    cfg,
+		queue:  NewTaskQueue(cfg),
+		assets: newAssetStore(cfg.AssetsDir),
 	}
 }
 
