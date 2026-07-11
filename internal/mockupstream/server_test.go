@@ -1,8 +1,10 @@
 package mockupstream
 
 import (
+	"bytes"
 	"encoding/json"
 	"io"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -226,6 +228,42 @@ func TestHealthz(t *testing.T) {
 	resp, _ := mustGet(t, ts.URL+"/__mock/healthz")
 	if resp.StatusCode != 200 {
 		t.Fatalf("healthz status %d", resp.StatusCode)
+	}
+}
+
+func TestEntryAccessLog(t *testing.T) {
+	var buf bytes.Buffer
+	prev := log.Writer()
+	log.SetOutput(&buf)
+	defer log.SetOutput(prev)
+
+	ts := newTestServer()
+	defer ts.Close()
+
+	// POST：日志须含方法、路由、query 和 body；且 body 复用后 handler 仍能
+	// 正常解析（model 正确回显）。
+	resp, data := postJSON(t, ts.URL+"/v1/chat/completions?debug=1",
+		`{"model":"gpt-5.5","messages":[{"role":"user","content":"hi"}]}`)
+	if resp.StatusCode != 200 {
+		t.Fatalf("status %d: %s", resp.StatusCode, data)
+	}
+	var out map[string]any
+	json.Unmarshal(data, &out)
+	if out["model"] != "gpt-5.5" {
+		t.Fatalf("body must be replayable after logging, got model=%v", out["model"])
+	}
+	logged := buf.String()
+	for _, want := range []string{"--> POST /v1/chat/completions?debug=1", `"model":"gpt-5.5"`} {
+		if !strings.Contains(logged, want) {
+			t.Fatalf("access log missing %q: %s", want, logged)
+		}
+	}
+
+	// healthz 不打日志（healthcheck 噪音）。
+	buf.Reset()
+	mustGet(t, ts.URL+"/__mock/healthz")
+	if strings.Contains(buf.String(), "healthz") {
+		t.Fatalf("healthz should not be logged: %s", buf.String())
 	}
 }
 

@@ -1,7 +1,9 @@
 package mockupstream
 
 import (
+	"bytes"
 	"crypto/subtle"
+	"io"
 	"log"
 	"net/http"
 	"strings"
@@ -42,11 +44,16 @@ func (s *Server) Handler() http.Handler {
 	return s.withMiddleware(mux)
 }
 
-// withMiddleware wraps the mux with optional API-key checking and access logs.
+// withMiddleware wraps the mux with access logging and optional API-key
+// checking. Every inbound request (except the healthcheck probe) is logged at
+// entry with its real route and parameters before any handler runs.
 func (s *Server) withMiddleware(next http.Handler) http.Handler {
 	// Key enforcement is on if explicitly requested, or implied by a fixed key.
 	enforce := s.cfg.RequireKey || s.cfg.APIKey != ""
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/__mock/healthz" { // healthcheck fires every few seconds — pure noise
+			logRequest(r)
+		}
 		if enforce && !isMockEndpoint(r.URL.Path) {
 			if !s.authOK(r) {
 				openAIError(w, http.StatusUnauthorized, "invalid_request_error",
@@ -56,6 +63,42 @@ func (s *Server) withMiddleware(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// logBodyMax caps the request-body preview in access logs so a b64 image
+// upload doesn't dump megabytes into the log stream.
+const logBodyMax = 2048
+
+// logRequest writes one entry line per inbound request: peer, method, route
+// (with query) and a truncated body preview. JSON-ish bodies are logged
+// verbatim; multipart/binary bodies are summarized by content type and size.
+// The body is fully re-buffered and handed back to r.Body so downstream
+// handlers read it unchanged.
+func logRequest(r *http.Request) {
+	preview := "-"
+	ct := r.Header.Get("Content-Type")
+	switch {
+	case r.Body == nil || r.Method == http.MethodGet || r.Method == http.MethodHead:
+		// no body to log
+	case strings.HasPrefix(ct, "multipart/") || strings.HasPrefix(ct, "application/octet-stream"):
+		preview = "(" + ct + ", " + itoa(int(r.ContentLength)) + " bytes)"
+	default:
+		const maxBody = 32 << 20 // same cap as readBody
+		data, _ := io.ReadAll(io.LimitReader(r.Body, maxBody))
+		r.Body = io.NopCloser(bytes.NewReader(data)) // hand the body back untouched
+		if len(data) > 0 {
+			p := data
+			if len(p) > logBodyMax {
+				p = p[:logBodyMax]
+			}
+			// Collapse newlines so one request stays one log line.
+			preview = strings.Join(strings.Fields(string(p)), " ")
+			if len(data) > logBodyMax {
+				preview += " ...(" + itoa(len(data)) + " bytes total)"
+			}
+		}
+	}
+	Logf("--> %s %s from %s body=%s", r.Method, r.URL.RequestURI(), r.RemoteAddr, preview)
 }
 
 // authOK reports whether the request carries an acceptable credential. When
