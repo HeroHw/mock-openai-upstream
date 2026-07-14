@@ -85,11 +85,7 @@ func (s *Server) handleZhipuChat(w http.ResponseWriter, r *http.Request) {
 				"finish_reason": "stop",
 			},
 		},
-		"usage": map[string]any{
-			"prompt_tokens":     pt,
-			"completion_tokens": ct,
-			"total_tokens":      tt,
-		},
+		"usage": s.openAIUsage(pt, ct, tt),
 	})
 }
 
@@ -153,11 +149,7 @@ func (s *Server) streamZhipuChat(w http.ResponseWriter, r *http.Request, model, 
 			"created": 0,
 			"model":   model,
 			"choices": []any{},
-			"usage": map[string]any{
-				"prompt_tokens":     pt,
-				"completion_tokens": ct,
-				"total_tokens":      tt,
-			},
+			"usage":   s.openAIUsage(pt, ct, tt),
 		})
 		if sse.data(string(payload)) != nil {
 			return

@@ -43,6 +43,38 @@ func (s *Server) usage(promptText, completionText string) (prompt, completion, t
 	return prompt, completion, prompt + completion
 }
 
+// cacheCreationSplit resolves the 5m/1h cache-creation token split. The legacy
+// CacheCreationTokens field keeps working as the 5-minute value when neither
+// split field is set, so existing configs are unaffected.
+func (s *Server) cacheCreationSplit() (c5m, c1h int) {
+	c5m, c1h = s.cfg.CacheCreation5mTokens, s.cfg.CacheCreation1hTokens
+	if c5m == 0 && c1h == 0 {
+		c5m = s.cfg.CacheCreationTokens
+	}
+	return c5m, c1h
+}
+
+// openAIUsage builds the chat/completions usage block with the detail objects
+// real OpenAI responses carry (Zhipu 复用同一形状). Detail fields are always
+// present so the gateway's billing pipeline sees a stable shape; they are 0
+// when unconfigured. 真实 API 中 cached_tokens/audio_tokens 是主计数的子集，
+// mock 按配置原样返回、不折算进 prompt/completion 主计数。
+func (s *Server) openAIUsage(pt, ct, tt int) map[string]any {
+	return map[string]any{
+		"prompt_tokens":     pt,
+		"completion_tokens": ct,
+		"total_tokens":      tt,
+		"prompt_tokens_details": map[string]any{
+			"cached_tokens": s.cfg.CacheReadTokens,
+			"audio_tokens":  s.cfg.AudioInputTokens,
+		},
+		"completion_tokens_details": map[string]any{
+			"reasoning_tokens": 0,
+			"audio_tokens":     s.cfg.AudioOutputTokens,
+		},
+	}
+}
+
 // replyText returns the configured chat reply text.
 func (s *Server) replyText() string {
 	return s.cfg.ReplyText

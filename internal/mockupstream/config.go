@@ -31,9 +31,16 @@ type Config struct {
 	ReplyText     string        // MOCK_REPLY_TEXT / reply_text：chat 回包内容，可固定便于断言
 	UsageMode     string        // MOCK_USAGE_MODE / usage_mode：token 用量模式，"echo"=按输入估算 | "fixed"=固定值
 
-	// 提示词缓存用量（Anthropic /v1/messages，§5）
-	CacheReadTokens     int // MOCK_CACHE_READ_TOKENS / cache_read_tokens：命中缓存读取的 token 数（cache_read_input_tokens），0=不返回该场景
-	CacheCreationTokens int // MOCK_CACHE_CREATION_TOKENS / cache_creation_tokens：写入缓存的 token 数（cache_creation_input_tokens），0=不返回该场景
+	// usage 模拟明细（§5）。各 chat 端点按所属协议的原生字段返回；明细值
+	// 独立配置、不折算进 prompt/completion 主计数，0 表示该场景保持零值。
+	CacheReadTokens       int // MOCK_CACHE_READ_TOKENS / cache_read_tokens：命中缓存读取的 token 数（Anthropic cache_read_input_tokens、OpenAI cached_tokens、Gemini cachedContentTokenCount）
+	CacheCreationTokens   int // MOCK_CACHE_CREATION_TOKENS / cache_creation_tokens：旧字段，兼容保留；未设置 5m/1h 拆分时充当 5 分钟档的值
+	CacheCreation5mTokens int // MOCK_CACHE_CREATION_5M_TOKENS / cache_creation_5m_tokens：5 分钟 TTL 缓存创建 token 数（Anthropic cache_creation.ephemeral_5m_input_tokens）
+	CacheCreation1hTokens int // MOCK_CACHE_CREATION_1H_TOKENS / cache_creation_1h_tokens：1 小时 TTL 缓存创建 token 数（Anthropic cache_creation.ephemeral_1h_input_tokens）
+	ImageInputTokens      int // MOCK_IMAGE_INPUT_TOKENS / image_input_tokens：图片输入 token 数（Gemini promptTokensDetails 的 IMAGE 模态）
+	ImageOutputTokens     int // MOCK_IMAGE_OUTPUT_TOKENS / image_output_tokens：图片输出 token 数（Gemini candidatesTokensDetails 的 IMAGE 模态）
+	AudioInputTokens      int // MOCK_AUDIO_INPUT_TOKENS / audio_input_tokens：音频输入 token 数（OpenAI prompt_tokens_details.audio_tokens、Gemini AUDIO 模态）
+	AudioOutputTokens     int // MOCK_AUDIO_OUTPUT_TOKENS / audio_output_tokens：音频输出 token 数（OpenAI completion_tokens_details.audio_tokens、Gemini AUDIO 模态）
 
 	// 同步生图/生视频（OpenAI 协议，§7）
 	ImageSyncDelayMin time.Duration // MOCK_IMAGE_SYNC_DELAY_MIN_S / image_sync_delay_min_s：同步生图最小延迟秒数
@@ -69,8 +76,14 @@ func defaults() Config {
 		ReplyText:     "Hello from the mock upstream service.",
 		UsageMode:     "echo",
 
-		CacheReadTokens:     0,
-		CacheCreationTokens: 0,
+		CacheReadTokens:       0,
+		CacheCreationTokens:   0,
+		CacheCreation5mTokens: 0,
+		CacheCreation1hTokens: 0,
+		ImageInputTokens:      0,
+		ImageOutputTokens:     0,
+		AudioInputTokens:      0,
+		AudioOutputTokens:     0,
 
 		ImageSyncDelayMin: 1 * time.Second,
 		ImageSyncDelayMax: 30 * time.Second,

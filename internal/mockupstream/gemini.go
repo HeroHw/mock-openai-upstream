@@ -120,7 +120,42 @@ func (s *Server) handleGemini(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusOK, s.geminiAudioResponse(model, pt))
 			return
 		}
-		writeJSON(w, http.StatusOK, geminiResponse(model, reply, pt, ct))
+		writeJSON(w, http.StatusOK, s.geminiResponse(model, reply, pt, ct))
+	}
+}
+
+// geminiUsageMetadata builds the usageMetadata block with Gemini's native
+// detail fields: cachedContentTokenCount (context caching hits) plus per-
+// modality breakdowns in promptTokensDetails / candidatesTokensDetails. 明细
+// 值按配置原样返回、不折算进 promptTokenCount/candidatesTokenCount 主计数；
+// TEXT 模态恒在，IMAGE/AUDIO 模态仅在配置了对应 token 数时出现（真实 Gemini
+// 只为实际出现的模态返回条目）。
+func (s *Server) geminiUsageMetadata(pt, ct int) map[string]any {
+	promptDetails := []any{
+		map[string]any{"modality": "TEXT", "tokenCount": pt},
+	}
+	if s.cfg.ImageInputTokens > 0 {
+		promptDetails = append(promptDetails, map[string]any{"modality": "IMAGE", "tokenCount": s.cfg.ImageInputTokens})
+	}
+	if s.cfg.AudioInputTokens > 0 {
+		promptDetails = append(promptDetails, map[string]any{"modality": "AUDIO", "tokenCount": s.cfg.AudioInputTokens})
+	}
+	candDetails := []any{
+		map[string]any{"modality": "TEXT", "tokenCount": ct},
+	}
+	if s.cfg.ImageOutputTokens > 0 {
+		candDetails = append(candDetails, map[string]any{"modality": "IMAGE", "tokenCount": s.cfg.ImageOutputTokens})
+	}
+	if s.cfg.AudioOutputTokens > 0 {
+		candDetails = append(candDetails, map[string]any{"modality": "AUDIO", "tokenCount": s.cfg.AudioOutputTokens})
+	}
+	return map[string]any{
+		"promptTokenCount":        pt,
+		"candidatesTokenCount":    ct,
+		"totalTokenCount":         pt + ct,
+		"cachedContentTokenCount": s.cfg.CacheReadTokens,
+		"promptTokensDetails":     promptDetails,
+		"candidatesTokensDetails": candDetails,
 	}
 }
 
@@ -144,17 +179,13 @@ func (s *Server) geminiAudioResponse(model string, pt int) map[string]any {
 				"index":        0,
 			},
 		},
-		"usageMetadata": map[string]any{
-			"promptTokenCount":     pt,
-			"candidatesTokenCount": 0,
-			"totalTokenCount":      pt,
-		},
-		"modelVersion": model,
+		"usageMetadata": s.geminiUsageMetadata(pt, 0),
+		"modelVersion":  model,
 	}
 }
 
 // geminiResponse builds a non-streaming generateContent body.
-func geminiResponse(model, text string, pt, ct int) map[string]any {
+func (s *Server) geminiResponse(model, text string, pt, ct int) map[string]any {
 	return map[string]any{
 		"candidates": []any{
 			map[string]any{
@@ -166,12 +197,8 @@ func geminiResponse(model, text string, pt, ct int) map[string]any {
 				"index":        0,
 			},
 		},
-		"usageMetadata": map[string]any{
-			"promptTokenCount":     pt,
-			"candidatesTokenCount": ct,
-			"totalTokenCount":      pt + ct,
-		},
-		"modelVersion": model,
+		"usageMetadata": s.geminiUsageMetadata(pt, ct),
+		"modelVersion":  model,
 	}
 }
 
@@ -214,11 +241,7 @@ func (s *Server) streamGemini(w http.ResponseWriter, r *http.Request, model, rep
 		if i == len(tokens)-1 {
 			cand := chunk["candidates"].([]any)[0].(map[string]any)
 			cand["finishReason"] = "STOP"
-			chunk["usageMetadata"] = map[string]any{
-				"promptTokenCount":     pt,
-				"candidatesTokenCount": ct,
-				"totalTokenCount":      pt + ct,
-			}
+			chunk["usageMetadata"] = s.geminiUsageMetadata(pt, ct)
 		}
 		b, _ := json.Marshal(chunk)
 		if _, err := fmt.Fprintf(w, "%s\r\n", b); err != nil {

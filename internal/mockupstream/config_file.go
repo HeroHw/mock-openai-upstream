@@ -25,8 +25,14 @@ type fileConfig struct {
 	ReplyText       *string  `json:"reply_text"`        // chat 回包内容
 	UsageMode       *string  `json:"usage_mode"`        // token 用量模式 echo|fixed
 
-	CacheReadTokens     *int `json:"cache_read_tokens"`     // 命中缓存读取的 token 数
-	CacheCreationTokens *int `json:"cache_creation_tokens"` // 写入缓存的 token 数
+	CacheReadTokens       *int `json:"cache_read_tokens"`        // 命中缓存读取的 token 数
+	CacheCreationTokens   *int `json:"cache_creation_tokens"`    // 写入缓存的 token 数（旧字段，充当 5m 档兜底）
+	CacheCreation5mTokens *int `json:"cache_creation_5m_tokens"` // 5 分钟 TTL 缓存创建 token 数
+	CacheCreation1hTokens *int `json:"cache_creation_1h_tokens"` // 1 小时 TTL 缓存创建 token 数
+	ImageInputTokens      *int `json:"image_input_tokens"`       // 图片输入 token 数
+	ImageOutputTokens     *int `json:"image_output_tokens"`      // 图片输出 token 数
+	AudioInputTokens      *int `json:"audio_input_tokens"`       // 音频输入 token 数
+	AudioOutputTokens     *int `json:"audio_output_tokens"`      // 音频输出 token 数
 
 	ImageSyncDelayMinS *int     `json:"image_sync_delay_min_s"` // 同步生图最小延迟秒数
 	ImageSyncDelayMaxS *int     `json:"image_sync_delay_max_s"` // 同步生图最大延迟秒数
@@ -71,6 +77,12 @@ func applyFile(cfg *Config, path string) error {
 
 	setInt(&cfg.CacheReadTokens, fc.CacheReadTokens)
 	setInt(&cfg.CacheCreationTokens, fc.CacheCreationTokens)
+	setInt(&cfg.CacheCreation5mTokens, fc.CacheCreation5mTokens)
+	setInt(&cfg.CacheCreation1hTokens, fc.CacheCreation1hTokens)
+	setInt(&cfg.ImageInputTokens, fc.ImageInputTokens)
+	setInt(&cfg.ImageOutputTokens, fc.ImageOutputTokens)
+	setInt(&cfg.AudioInputTokens, fc.AudioInputTokens)
+	setInt(&cfg.AudioOutputTokens, fc.AudioOutputTokens)
 
 	setSec(&cfg.ImageSyncDelayMin, fc.ImageSyncDelayMinS)
 	setSec(&cfg.ImageSyncDelayMax, fc.ImageSyncDelayMaxS)
@@ -106,6 +118,12 @@ func applyEnv(cfg *Config) {
 
 	cfg.CacheReadTokens = envInt("MOCK_CACHE_READ_TOKENS", cfg.CacheReadTokens)
 	cfg.CacheCreationTokens = envInt("MOCK_CACHE_CREATION_TOKENS", cfg.CacheCreationTokens)
+	cfg.CacheCreation5mTokens = envInt("MOCK_CACHE_CREATION_5M_TOKENS", cfg.CacheCreation5mTokens)
+	cfg.CacheCreation1hTokens = envInt("MOCK_CACHE_CREATION_1H_TOKENS", cfg.CacheCreation1hTokens)
+	cfg.ImageInputTokens = envInt("MOCK_IMAGE_INPUT_TOKENS", cfg.ImageInputTokens)
+	cfg.ImageOutputTokens = envInt("MOCK_IMAGE_OUTPUT_TOKENS", cfg.ImageOutputTokens)
+	cfg.AudioInputTokens = envInt("MOCK_AUDIO_INPUT_TOKENS", cfg.AudioInputTokens)
+	cfg.AudioOutputTokens = envInt("MOCK_AUDIO_OUTPUT_TOKENS", cfg.AudioOutputTokens)
 
 	cfg.ImageSyncDelayMin = envSec("MOCK_IMAGE_SYNC_DELAY_MIN_S", cfg.ImageSyncDelayMin)
 	cfg.ImageSyncDelayMax = envSec("MOCK_IMAGE_SYNC_DELAY_MAX_S", cfg.ImageSyncDelayMax)

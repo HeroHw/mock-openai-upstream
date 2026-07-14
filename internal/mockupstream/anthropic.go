@@ -44,14 +44,23 @@ func extractAnthropicPrompt(m map[string]any) string {
 // input_tokens is the full-price remainder; cache_read_input_tokens (~0.1x base
 // price) and cache_creation_input_tokens (1.25x/2x base price) are reported
 // separately and are NOT folded into input_tokens, matching real upstream
-// prompt-caching semantics (doc §5). Both cache fields are always present so the
-// gateway's billing pipeline sees a stable shape; they are 0 when unconfigured.
+// prompt-caching semantics (doc §5). cache_creation_input_tokens is the legacy
+// total; the nested cache_creation object breaks it down by TTL
+// (ephemeral_5m_input_tokens at 1.25x, ephemeral_1h_input_tokens at 2x), and
+// the total always equals their sum, as in real responses. All cache fields
+// are always present so the gateway's billing pipeline sees a stable shape;
+// they are 0 when unconfigured.
 func (s *Server) anthropicUsage(inputTokens, outputTokens int) map[string]any {
+	c5m, c1h := s.cacheCreationSplit()
 	return map[string]any{
 		"input_tokens":                inputTokens,
 		"output_tokens":               outputTokens,
 		"cache_read_input_tokens":     s.cfg.CacheReadTokens,
-		"cache_creation_input_tokens": s.cfg.CacheCreationTokens,
+		"cache_creation_input_tokens": c5m + c1h,
+		"cache_creation": map[string]any{
+			"ephemeral_5m_input_tokens": c5m,
+			"ephemeral_1h_input_tokens": c1h,
+		},
 	}
 }
 

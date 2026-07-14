@@ -124,7 +124,10 @@ func (s *Server) responsesEnvelope(respID, model, prompt, reply string, reasonin
 		"output":     output,
 		"error":      nil,
 		"usage": map[string]any{
-			"input_tokens":  pt,
+			"input_tokens": pt,
+			"input_tokens_details": map[string]any{
+				"cached_tokens": s.cfg.CacheReadTokens,
+			},
 			"output_tokens": ct + reasoningTokens,
 			"output_tokens_details": map[string]any{
 				"reasoning_tokens": reasoningTokens,

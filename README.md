@@ -120,6 +120,11 @@ MOCK_ASSETS_DIR=./my-assets go run ./cmd/mockupstream
 | `MOCK_ERROR_STATUS` | `500` | 注入时返回的 HTTP 状态码 |
 | `MOCK_REPLY_TEXT` | 内置 | chat 回包内容，可固定便于断言 |
 | `MOCK_USAGE_MODE` | `echo` | `echo` 按输入估算 token；`fixed` 返回固定值，便于校验计费 |
+| `MOCK_CACHE_READ_TOKENS` | `0` | 缓存读取 token 数（Anthropic `cache_read_input_tokens`、OpenAI `cached_tokens`、Gemini `cachedContentTokenCount`） |
+| `MOCK_CACHE_CREATION_5M_TOKENS` / `MOCK_CACHE_CREATION_1H_TOKENS` | `0` | 5 分钟 / 1 小时 TTL 缓存创建 token 数（Anthropic `cache_creation.ephemeral_5m_input_tokens` / `.ephemeral_1h_input_tokens`；总量 `cache_creation_input_tokens` = 两者之和） |
+| `MOCK_CACHE_CREATION_TOKENS` | `0` | 旧字段（兼容保留）；未设置 5m/1h 拆分时充当 5m 档的值 |
+| `MOCK_IMAGE_INPUT_TOKENS` / `MOCK_IMAGE_OUTPUT_TOKENS` | `0` | 图片输入/输出 token 数（Gemini `promptTokensDetails` / `candidatesTokensDetails` 的 IMAGE 模态） |
+| `MOCK_AUDIO_INPUT_TOKENS` / `MOCK_AUDIO_OUTPUT_TOKENS` | `0` | 音频输入/输出 token 数（OpenAI `prompt_tokens_details.audio_tokens` / `completion_tokens_details.audio_tokens`、Gemini AUDIO 模态） |
 | `MOCK_IMAGE_SYNC_DELAY_S` / `MOCK_VIDEO_SYNC_DELAY_S` | `60` | 同步生图/生视频响应前阻塞秒数 |
 | `MOCK_SYNC_JITTER_S` | `5` | 同步延时 ±抖动（按 prompt 哈希，确定性） |
 | `MOCK_SYNC_FAIL_RATE` | `0` | 同步失败注入（按 prompt 哈希，确定性） |

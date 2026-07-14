@@ -29,6 +29,21 @@
   "reply_text": "Hello from the mock upstream service.", // chat 回包内容，可固定便于断言，对应 MOCK_REPLY_TEXT
   "usage_mode": "echo",             // token 用量模式：echo=按输入估算；fixed=固定值便于校验计费，对应 MOCK_USAGE_MODE
 
+  // ── usage 模拟明细（各协议按原生字段名返回，0=该场景保持零值）──
+  "cache_read_tokens": 0,           // 命中缓存读取的 token 数，对应 MOCK_CACHE_READ_TOKENS；
+                                    //   Anthropic cache_read_input_tokens / OpenAI cached_tokens / Gemini cachedContentTokenCount
+  "cache_creation_5m_tokens": 0,    // 5 分钟 TTL 缓存创建 token 数，对应 MOCK_CACHE_CREATION_5M_TOKENS；
+                                    //   Anthropic cache_creation.ephemeral_5m_input_tokens
+  "cache_creation_1h_tokens": 0,    // 1 小时 TTL 缓存创建 token 数，对应 MOCK_CACHE_CREATION_1H_TOKENS；
+                                    //   Anthropic cache_creation.ephemeral_1h_input_tokens；
+                                    //   cache_creation_input_tokens 总量恒等于 5m+1h 之和
+  "cache_creation_tokens": 0,       // 旧字段（兼容保留），对应 MOCK_CACHE_CREATION_TOKENS；
+                                    //   未设置上面两个拆分字段时充当 5m 档的值
+  "image_input_tokens": 0,          // 图片输入 token 数，对应 MOCK_IMAGE_INPUT_TOKENS（Gemini promptTokensDetails IMAGE 模态）
+  "image_output_tokens": 0,         // 图片输出 token 数，对应 MOCK_IMAGE_OUTPUT_TOKENS（Gemini candidatesTokensDetails IMAGE 模态）
+  "audio_input_tokens": 0,          // 音频输入 token 数，对应 MOCK_AUDIO_INPUT_TOKENS（OpenAI prompt_tokens_details.audio_tokens、Gemini AUDIO 模态）
+  "audio_output_tokens": 0,         // 音频输出 token 数，对应 MOCK_AUDIO_OUTPUT_TOKENS（OpenAI completion_tokens_details.audio_tokens、Gemini AUDIO 模态）
+
   // ── 同步生图/生视频（OpenAI 协议，§7）──
   "image_sync_delay_min_s": 1,      // 同步生图响应前阻塞最小秒数，对应 MOCK_IMAGE_SYNC_DELAY_MIN_S
   "image_sync_delay_max_s": 30,     // 同步生图响应前阻塞最大秒数，对应 MOCK_IMAGE_SYNC_DELAY_MAX_S；
