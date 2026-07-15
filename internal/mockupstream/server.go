@@ -16,6 +16,7 @@ type Server struct {
 	cfg    Config
 	queue  *TaskQueue
 	assets *assetStore
+	insp   *inspector
 }
 
 // NewServer constructs a Server with the given config.
@@ -24,6 +25,7 @@ func NewServer(cfg Config) *Server {
 		cfg:    cfg,
 		queue:  NewTaskQueue(cfg),
 		assets: newAssetStore(cfg.AssetsDir),
+		insp:   newInspector(),
 	}
 }
 
@@ -37,6 +39,8 @@ func (s *Server) Handler() http.Handler {
 	// Management / asset endpoints (§10, §3).
 	mux.HandleFunc("/__assets/", s.handleAssets)
 	mux.HandleFunc("/__mock/healthz", s.handleHealthz)
+	mux.HandleFunc("/__mock/requests", s.handleMockRequests)
+	mux.HandleFunc("/__mock/behavior", s.handleMockBehavior)
 
 	// Everything else goes through the protocol dispatcher.
 	mux.HandleFunc("/", s.dispatch)
@@ -44,15 +48,32 @@ func (s *Server) Handler() http.Handler {
 	return s.withMiddleware(mux)
 }
 
-// withMiddleware wraps the mux with access logging and optional API-key
-// checking. Every inbound request (except the healthcheck probe) is logged at
-// entry with its real route and parameters before any handler runs.
+// withMiddleware wraps the mux with access logging, request capture, on-demand
+// failure injection and optional API-key checking. Every inbound request
+// (except the healthcheck probe) is logged at entry with its real route and
+// parameters before any handler runs.
 func (s *Server) withMiddleware(next http.Handler) http.Handler {
 	// Key enforcement is on if explicitly requested, or implied by a fixed key.
 	enforce := s.cfg.RequireKey || s.cfg.APIKey != ""
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/__mock/healthz" { // healthcheck fires every few seconds — pure noise
 			logRequest(r)
+		}
+		if !isMockEndpoint(r.URL.Path) {
+			// Capture the request exactly as the gateway sent it — headers and
+			// body — so acceptance tests can assert on the final upstream shape
+			// (param/header overrides, passthrough byte-identity) via
+			// GET /__mock/requests.
+			body := rebufferBody(r)
+			s.insp.record(r, body)
+
+			// On-demand failure injection (POST /__mock/behavior): unlike the
+			// hash-sampled MOCK_ERROR_RATE, this fails deterministically for
+			// the next N requests — the shape auto-disable drills need.
+			if status, msg, hit := s.insp.shouldFail(r.URL.Path); hit {
+				openAIError(w, status, "server_error", msg, "mock_forced_failure")
+				return
+			}
 		}
 		if enforce && !isMockEndpoint(r.URL.Path) {
 			if !s.authOK(r) {
@@ -63,6 +84,19 @@ func (s *Server) withMiddleware(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// rebufferBody fully reads r.Body (capped like readBody) and hands an
+// identical copy back to the request so downstream handlers are unaffected.
+// Returns nil for bodyless requests.
+func rebufferBody(r *http.Request) []byte {
+	if r.Body == nil || r.Method == http.MethodGet || r.Method == http.MethodHead {
+		return nil
+	}
+	const maxBody = 32 << 20 // same cap as readBody
+	data, _ := io.ReadAll(io.LimitReader(r.Body, maxBody))
+	r.Body = io.NopCloser(bytes.NewReader(data))
+	return data
 }
 
 // logBodyMax caps the request-body preview in access logs so a b64 image

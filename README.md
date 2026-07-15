@@ -72,7 +72,7 @@ APIKey:  任意非空字符串（默认不校验，除非 MOCK_REQUIRE_KEY=1）
 | DashScope（异步） | `POST .../{text2image,image2image}/image-synthesis`、`POST .../{video-generation,image2video}/video-synthesis`（覆盖 wan2.x / happyhorse 全系）、`GET /api/v1/tasks/{id}` |
 | 智谱 GLM | `/api/paas/v4/chat/completions`（SSE）、`/api/paas/v4/images/generations`（同步）、`POST /api/paas/v4/videos/generations`（异步提交，CogVideoX）、`GET /api/paas/v4/async-result/{id}`（轮询，返回 `video_result`） |
 | MiniMax 海螺（异步） | `POST /v1/video_generation`（提交）、`GET /v1/query/video_generation?task_id=`（轮询）、`GET /v1/files/retrieve?file_id=`（成功后取 `download_url`） |
-| 内部 | `/__assets/{mock-image.png,mock-video.mp4,mock-audio.wav}`、`/__mock/healthz` |
+| 内部 | `/__assets/{mock-image.png,mock-video.mp4,mock-audio.wav}`、`/__mock/healthz`、`/__mock/requests`（请求捕获）、`/__mock/behavior`（按需错误注入） |
 
 路径按后缀匹配，所以 `BaseURL` 带不带 `/v1` 前缀都能正确路由。
 
@@ -160,6 +160,67 @@ curl "localhost:18080/v1beta/models/gemini-pro:generateContent?key=sk-mock-secre
 凭据缺失或不匹配返回 `401`。内部端点 `/__mock/*`、`/__assets/*` 不受校验，compose healthcheck 照常工作。`MOCK_API_KEY` 一旦设置即隐含开启校验，无需再设 `MOCK_REQUIRE_KEY`。
 
 所有"随机性"都是确定性的——决策来自请求输入的稳定哈希，因此同一压测负载在多次运行间复现相同的延迟和错误，CI 友好。
+
+## 验收辅助端点（请求捕获 + 按需错误注入）
+
+为网关渠道功能验收（参数覆盖、请求头覆盖/剔除、透传请求体、自动禁用）提供两组内部端点。与 `/__mock/healthz` 一样**不受 API-key 校验和错误注入影响**。
+
+### 请求捕获 `/__mock/requests`
+
+所有业务请求（`/__mock/*`、`/__assets/*` 除外）的最终形态——方法、路径、query、**完整请求头**、请求体——都会记入内存环形缓冲（最近 256 条）。用它断言网关下发到上游的请求：头覆盖/剔除是否生效、参数覆盖后的 body、透传模式下 body 是否字节级一致（比对 `body_sha256`）。
+
+```bash
+# 查看最近的请求（默认 20 条，最新在前）
+curl 'localhost:18080/__mock/requests'
+
+# 按条数和路径后缀过滤
+curl 'localhost:18080/__mock/requests?limit=5&path_suffix=/chat/completions'
+
+# 清空捕获记录（每个用例开始前清一次，断言才干净）
+curl -X DELETE localhost:18080/__mock/requests
+```
+
+返回字段说明：`headers` 为完整请求头；`body` 为 UTF-8 文本原文（二进制则给 `body_base64`）；`body_sha256`/`body_bytes` 覆盖完整 payload（存储副本超过 1 MiB 截断并标记 `body_truncated`，但摘要仍是全量的）；`seq` 单调递增，便于排序断言。
+
+典型断言（配合 jq）：
+
+```bash
+# 断言参数覆盖：上游收到的 temperature 是渠道覆盖值
+curl -s 'localhost:18080/__mock/requests?limit=1&path_suffix=/chat/completions' \
+  | jq -r '.requests[0].body | fromjson | .temperature'
+
+# 断言头剔除：X-Debug-Token 不应出现
+curl -s 'localhost:18080/__mock/requests?limit=1' \
+  | jq '.requests[0].headers | has("X-Debug-Token")'   # → false
+
+# 断言透传：sha256 与客户端原始 body 一致
+shasum -a 256 payload.json
+curl -s 'localhost:18080/__mock/requests?limit=1' | jq -r '.requests[0].body_sha256'
+```
+
+### 按需错误注入 `/__mock/behavior`
+
+与 `MOCK_ERROR_RATE`（哈希采样、启动时配置）不同，这里是**运行时设定、确定性生效**的失败规则：接下来 N 次请求必然返回指定状态码和消息——正是渠道自动禁用（60 秒窗口内失败 N 次）演练需要的形态。全局只有一条规则，新 POST 覆盖旧规则。
+
+```bash
+# 接下来 3 次请求返回 429（触发 auto-disable 阈值），之后自动恢复
+curl -X POST localhost:18080/__mock/behavior \
+  -d '{"status":429,"message":"rate limit exceeded (mock)","times":3}'
+
+# message 可埋 auto-disable 的 keywords 关键词
+curl -X POST localhost:18080/__mock/behavior \
+  -d '{"status":401,"message":"invalid api key provided","times":3}'
+
+# times=0 表示不限次（直到 DELETE）；path_suffix 只对匹配路径生效
+curl -X POST localhost:18080/__mock/behavior \
+  -d '{"status":503,"times":0,"path_suffix":"/chat/completions"}'
+
+# 查看当前规则（含已命中次数 hits）／清除规则
+curl localhost:18080/__mock/behavior
+curl -X DELETE localhost:18080/__mock/behavior
+```
+
+字段：`status` HTTP 状态码（默认 500）；`message` 错误消息，放进 OpenAI 风格 error 信封；`times` 剩余失败次数，>0 耗尽后规则自动移除、0 为不限次；`path_suffix` 路径后缀过滤，空则命中所有业务路径。错误注入发生在协议分发之前，对所有端点生效；被注入的请求同样会被捕获进 `/__mock/requests`。
 
 ## 同步 vs 异步生图/生视频
 
