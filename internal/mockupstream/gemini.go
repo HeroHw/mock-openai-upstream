@@ -63,6 +63,19 @@ func geminiWantsAudio(model string, req map[string]any) bool {
 	if strings.Contains(strings.ToLower(model), "tts") {
 		return true
 	}
+	return geminiHasModality(req, "AUDIO")
+}
+
+// geminiWantsImage reports whether the request declares native image output
+// via generationConfig.responseModalities containing "IMAGE"（SupportedImagineModels
+// 名单命中后网关注入的形态）。
+func geminiWantsImage(req map[string]any) bool {
+	return geminiHasModality(req, "IMAGE")
+}
+
+// geminiHasModality reports whether generationConfig.responseModalities
+// contains the given modality (case-insensitive).
+func geminiHasModality(req map[string]any, modality string) bool {
 	gc, ok := req["generationConfig"].(map[string]any)
 	if !ok {
 		return false
@@ -72,11 +85,76 @@ func geminiWantsAudio(model string, req map[string]any) bool {
 		return false
 	}
 	for _, m := range mods {
-		if s, ok := m.(string); ok && strings.EqualFold(s, "AUDIO") {
+		if s, ok := m.(string); ok && strings.EqualFold(s, modality) {
 			return true
 		}
 	}
 	return false
+}
+
+// geminiError writes a Google-style error envelope
+// ({"error":{"code","message","status"}}), matching what Vertex/Gemini return
+// on validation failures.
+func geminiError(w http.ResponseWriter, code int, message, status string) {
+	writeJSON(w, code, map[string]any{
+		"error": map[string]any{
+			"code":    code,
+			"message": message,
+			"status":  status,
+		},
+	})
+}
+
+// geminiThinkingFamily reports whether the model belongs to a thinking-capable
+// Gemini generation (2.5+/3.x)——真实上游只对这些模型强制 thoughtSignature。
+func geminiThinkingFamily(model string) bool {
+	lower := strings.ToLower(model)
+	return strings.Contains(lower, "gemini-2.5") || strings.Contains(lower, "gemini-3")
+}
+
+// strictGeminiCheck mimics Vertex/Gemini request validation (MOCK_STRICT=1)：
+// 递归遍历 contents[].parts，functionCall part 缺 thoughtSignature（仅思考系
+// 模型）或 functionResponse 携带非空 id 时返回 400 错误消息。网关的
+// "思维签名填充" 和 "移除 functionResponse.id" 修补没生效时，这里必然报错。
+func strictGeminiCheck(model string, req map[string]any) string {
+	contents, ok := req["contents"].([]any)
+	if !ok {
+		return ""
+	}
+	checkSignature := geminiThinkingFamily(model)
+	for ci, item := range contents {
+		c, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		parts, ok := c["parts"].([]any)
+		if !ok {
+			continue
+		}
+		for pi, pp := range parts {
+			p, ok := pp.(map[string]any)
+			if !ok {
+				continue
+			}
+			if _, has := p["functionCall"]; has && checkSignature {
+				if sig, _ := p["thoughtSignature"].(string); sig == "" {
+					return fmt.Sprintf(
+						"Function call part at contents[%d].parts[%d] is missing a thought_signature. "+
+							"When thinking is enabled, function calls from previous turns must include their thought signatures.",
+						ci, pi)
+				}
+			}
+			if fr, ok := p["functionResponse"].(map[string]any); ok {
+				if id, _ := fr["id"].(string); id != "" {
+					return fmt.Sprintf(
+						"Invalid value at contents[%d].parts[%d].function_response.id: "+
+							"ID %q does not match any function call in the request.",
+						ci, pi, id)
+				}
+			}
+		}
+	}
+	return ""
 }
 
 func (s *Server) handleGemini(w http.ResponseWriter, r *http.Request) {
@@ -87,16 +165,23 @@ func (s *Server) handleGemini(w http.ResponseWriter, r *http.Request) {
 	}
 	body, _ := readBody(r)
 	req := decodeJSON(body)
+	if s.cfg.Strict && (action == "generateContent" || action == "streamGenerateContent") {
+		if msg := strictGeminiCheck(model, req); msg != "" {
+			geminiError(w, http.StatusBadRequest, msg, "INVALID_ARGUMENT")
+			return
+		}
+	}
 	prompt := extractGeminiPrompt(req)
 	reply := s.replyText()
 	pt, ct, _ := s.usage(prompt, reply)
+	wantsImage := geminiWantsImage(req)
 
 	switch action {
 	case "countTokens":
 		writeJSON(w, http.StatusOK, map[string]any{"totalTokens": pt})
 		return
 	case "streamGenerateContent":
-		s.streamGemini(w, r, model, reply, pt, ct)
+		s.streamGemini(w, r, model, reply, pt, ct, wantsImage)
 		return
 	default: // generateContent (and any unrecognized action) → non-stream
 		n := nextSeq()
@@ -120,7 +205,7 @@ func (s *Server) handleGemini(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusOK, s.geminiAudioResponse(model, pt))
 			return
 		}
-		writeJSON(w, http.StatusOK, s.geminiResponse(model, reply, pt, ct))
+		writeJSON(w, http.StatusOK, s.geminiResponse(model, reply, pt, ct, wantsImage))
 	}
 }
 
@@ -184,14 +269,26 @@ func (s *Server) geminiAudioResponse(model string, pt int) map[string]any {
 	}
 }
 
-// geminiResponse builds a non-streaming generateContent body.
-func (s *Server) geminiResponse(model, text string, pt, ct int) map[string]any {
+// geminiResponse builds a non-streaming generateContent body. withImage 时在
+// text part 后追加 inlineData PNG（真实可解码，复用内置测试图）——模拟
+// gemini-*-image 系模型显式声明 responseModalities:["TEXT","IMAGE"] 后的原生
+// 图像输出。
+func (s *Server) geminiResponse(model, text string, pt, ct int, withImage bool) map[string]any {
+	parts := []any{map[string]any{"text": text}}
+	if withImage {
+		parts = append(parts, map[string]any{
+			"inlineData": map[string]any{
+				"mimeType": "image/png",
+				"data":     string(s.assets.pngB64),
+			},
+		})
+	}
 	return map[string]any{
 		"candidates": []any{
 			map[string]any{
 				"content": map[string]any{
 					"role":  "model",
-					"parts": []any{map[string]any{"text": text}},
+					"parts": parts,
 				},
 				"finishReason": "STOP",
 				"index":        0,
@@ -204,7 +301,8 @@ func (s *Server) geminiResponse(model, text string, pt, ct int) map[string]any {
 
 // streamGemini emits one JSON chunk per token. Gemini streams newline-delimited
 // JSON objects (each a partial GenerateContentResponse), not `data:` SSE frames.
-func (s *Server) streamGemini(w http.ResponseWriter, r *http.Request, model, reply string, pt, ct int) {
+// withImage 时最后一个 chunk 的 parts 里追加 inlineData PNG。
+func (s *Server) streamGemini(w http.ResponseWriter, r *http.Request, model, reply string, pt, ct int, withImage bool) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
@@ -225,21 +323,31 @@ func (s *Server) streamGemini(w http.ResponseWriter, r *http.Request, model, rep
 		if !sleepCtx(s.cfg.TokenInterval, done) {
 			return
 		}
+		parts := []any{map[string]any{"text": tok}}
 		chunk := map[string]any{
 			"candidates": []any{
 				map[string]any{
 					"content": map[string]any{
 						"role":  "model",
-						"parts": []any{map[string]any{"text": tok}},
+						"parts": parts,
 					},
 					"index": 0,
 				},
 			},
 			"modelVersion": model,
 		}
-		// Attach finishReason + usage on the final chunk.
+		// Attach finishReason + usage (+ the image part) on the final chunk.
 		if i == len(tokens)-1 {
 			cand := chunk["candidates"].([]any)[0].(map[string]any)
+			if withImage {
+				parts = append(parts, map[string]any{
+					"inlineData": map[string]any{
+						"mimeType": "image/png",
+						"data":     string(s.assets.pngB64),
+					},
+				})
+				cand["content"].(map[string]any)["parts"] = parts
+			}
 			cand["finishReason"] = "STOP"
 			chunk["usageMetadata"] = s.geminiUsageMetadata(pt, ct)
 		}

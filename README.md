@@ -135,6 +135,27 @@ MOCK_ASSETS_DIR=./my-assets go run ./cmd/mockupstream
 | `MOCK_REQUIRE_KEY` | `false` | 要求非空凭据（Authorization / x-api-key / ?key=），但不校验具体值 |
 | `MOCK_API_KEY` | 空 | 设置后强制校验：凭据必须**等于**此固定值（常量时间比较），否则返回 401 |
 | `MOCK_ASSETS_DIR` | 空 | 真实素材目录；内含 `mock-image.png`/`mock-video.mp4`/`mock-audio.wav` 时逐个覆盖内置资产 |
+| `MOCK_STRICT` | `false` | 严格校验模式：模拟真上游对畸形请求报 400（见下文） |
+
+### 严格校验模式（MOCK_STRICT）
+
+默认 mock 对任何请求体都宽容接受。设 `MOCK_STRICT=1` 后，以下畸形请求会像真上游一样报 400——用于验证网关的请求修补逻辑**不生效时确实会失败**（端到端负向验证）：
+
+| 端点 | 校验 | 对应网关设置 |
+|------|------|--------------|
+| Gemini `generateContent` | 思考系模型（2.5+/3）历史 `functionCall` part 缺 `thoughtSignature` → 400 `INVALID_ARGUMENT` | FunctionCall 思维签名填充 |
+| Gemini `generateContent` | `functionResponse` 携带非空 `id` → 400（模拟 Vertex 严格 ID 校验） | 移除 functionResponse.id |
+| Anthropic `/v1/messages` | `max_tokens` 缺失或 <1 → 400 `Field required` | Claude 缺省 MaxTokens |
+| Anthropic `/v1/messages` | `thinking.budget_tokens` <1024 或 ≥`max_tokens` → 400 | 思考适配 BudgetTokens 百分比 |
+| Anthropic `/v1/messages` | thinking 开启且 `temperature` ≠1 → 400 | 思考适配强制 temperature=1.0 |
+
+```bash
+MOCK_STRICT=1 go run ./cmd/mockupstream
+```
+
+### Gemini 原生图像输出
+
+请求的 `generationConfig.responseModalities` 含 `IMAGE` 时（即网关 SupportedImagineModels 名单命中后注入的形态），`generateContent` / `streamGenerateContent` 的 candidates parts 里会多一个 `inlineData` part（`image/png`，真实可解码的内置测试图；流式挂在最后一个 chunk）。未声明 IMAGE 模态则只回 text——与真实上游"必须显式声明"的行为一致。
 
 ### 鉴权说明
 
@@ -211,6 +232,16 @@ curl -X POST localhost:18080/__mock/behavior \
 curl -X POST localhost:18080/__mock/behavior \
   -d '{"status":401,"message":"invalid api key provided","times":3}'
 
+# error_type / error_code 覆盖 OpenAI 信封字段——网关按错误码识别上游违规
+# （如 Grok CSAM 罚金 violation_fee.grok_csam 链路）时用
+curl -X POST localhost:18080/__mock/behavior \
+  -d '{"status":400,"message":"content violates usage policy","times":1,"error_type":"invalid_request_error","error_code":"content_policy_violation"}'
+
+# raw_body 原样返回任意响应体（content_type 可选，默认 application/json）——
+# 模拟 OpenAI 信封装不下的私有错误形态
+curl -X POST localhost:18080/__mock/behavior \
+  -d '{"status":403,"times":1,"raw_body":"{\"code\":\"The system has detected potential CSAM content\"}"}'
+
 # times=0 表示不限次（直到 DELETE）；path_suffix 只对匹配路径生效
 curl -X POST localhost:18080/__mock/behavior \
   -d '{"status":503,"times":0,"path_suffix":"/chat/completions"}'
@@ -220,7 +251,7 @@ curl localhost:18080/__mock/behavior
 curl -X DELETE localhost:18080/__mock/behavior
 ```
 
-字段：`status` HTTP 状态码（默认 500）；`message` 错误消息，放进 OpenAI 风格 error 信封；`times` 剩余失败次数，>0 耗尽后规则自动移除、0 为不限次；`path_suffix` 路径后缀过滤，空则命中所有业务路径。错误注入发生在协议分发之前，对所有端点生效；被注入的请求同样会被捕获进 `/__mock/requests`。
+字段：`status` HTTP 状态码（默认 500）；`message` 错误消息，放进 OpenAI 风格 error 信封；`times` 剩余失败次数，>0 耗尽后规则自动移除、0 为不限次；`path_suffix` 路径后缀过滤，空则命中所有业务路径；`error_type`/`error_code` 覆盖 OpenAI 信封的 `error.type`/`error.code`（缺省 `server_error`/`mock_forced_failure`）；`raw_body` 原样响应体（设置后忽略 message/error_type/error_code），`content_type` 指定其 MIME（默认 `application/json`）。错误注入发生在协议分发之前，对所有端点生效；被注入的请求同样会被捕获进 `/__mock/requests`。
 
 ## 同步 vs 异步生图/生视频
 

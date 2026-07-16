@@ -61,6 +61,7 @@ type Config struct {
 	RequireKey bool   // MOCK_REQUIRE_KEY / require_key：要求非空凭据但不校验具体值
 	APIKey     string // MOCK_API_KEY / api_key：设置后强制校验，凭据须等于此固定值，否则 401
 	AssetsDir  string // MOCK_ASSETS_DIR / assets_dir：真实素材目录，内含 mock-image.png / mock-video.mp4 / mock-audio.wav 时优先于内置资产
+	Strict     bool   // MOCK_STRICT / strict：严格校验模式，模拟真上游对畸形请求报 400（Gemini thoughtSignature / functionResponse.id、Anthropic max_tokens / budget_tokens）
 }
 
 // defaults returns the built-in configuration used when nothing is overridden.
@@ -101,6 +102,7 @@ func defaults() Config {
 		RequireKey: false,
 		APIKey:     "",
 		AssetsDir:  "",
+		Strict:     false,
 	}
 }
 

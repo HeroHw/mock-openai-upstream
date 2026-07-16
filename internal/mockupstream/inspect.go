@@ -52,12 +52,23 @@ type capturedRequest struct {
 }
 
 // failRule is an on-demand failure injected ahead of normal dispatch.
+//
+// 错误响应形态三选一（优先级从高到低）：
+//  1. raw_body 非空：原样作为响应体返回（content_type 可指定 MIME，默认
+//     application/json）——模拟任意上游的私有错误信封（如 xAI 违规标记）。
+//  2. error_type / error_code 任一非空：OpenAI 信封，type/code 用给定值
+//     （缺省分别回落 server_error / mock_forced_failure）。
+//  3. 都为空：与旧版一致的 OpenAI 信封。
 type failRule struct {
-	Status     int    `json:"status"`                // HTTP 状态码，默认 500
-	Message    string `json:"message"`               // 错误消息（可埋 auto-disable 关键词）
-	Times      int    `json:"times"`                 // >0 剩余次数，耗尽自动移除；0 = 不限次，直到 DELETE
-	PathSuffix string `json:"path_suffix,omitempty"` // 按路径后缀过滤；空 = 所有业务路径
-	Hits       int    `json:"hits"`                  // 已命中次数（只读）
+	Status      int    `json:"status"`                 // HTTP 状态码，默认 500
+	Message     string `json:"message"`                // 错误消息（可埋 auto-disable 关键词）
+	Times       int    `json:"times"`                  // >0 剩余次数，耗尽自动移除；0 = 不限次，直到 DELETE
+	PathSuffix  string `json:"path_suffix,omitempty"`  // 按路径后缀过滤；空 = 所有业务路径
+	ErrorType   string `json:"error_type,omitempty"`   // OpenAI 信封 error.type 覆盖值
+	ErrorCode   string `json:"error_code,omitempty"`   // OpenAI 信封 error.code 覆盖值（网关按错误码匹配的场景，如 Grok 违规）
+	RawBody     string `json:"raw_body,omitempty"`     // 原样响应体，设置后忽略 message/error_type/error_code
+	ContentType string `json:"content_type,omitempty"` // raw_body 的 Content-Type，默认 application/json
+	Hits        int    `json:"hits"`                   // 已命中次数（只读）
 }
 
 // inspector owns the capture ring and the active failure rule. All access is
@@ -129,16 +140,17 @@ func (in *inspector) clearRequests() {
 }
 
 // shouldFail reports whether the active rule fires for path, consuming one
-// charge when it does. An exhausted counted rule removes itself.
-func (in *inspector) shouldFail(path string) (status int, message string, ok bool) {
+// charge when it does. An exhausted counted rule removes itself. The returned
+// rule is a copy, safe to use after the lock is released.
+func (in *inspector) shouldFail(path string) (rule failRule, ok bool) {
 	in.mu.Lock()
 	defer in.mu.Unlock()
 	r := in.rule
 	if r == nil {
-		return 0, "", false
+		return failRule{}, false
 	}
 	if r.PathSuffix != "" && !strings.HasSuffix(path, r.PathSuffix) {
-		return 0, "", false
+		return failRule{}, false
 	}
 	r.Hits++
 	if r.Times > 0 {
@@ -147,7 +159,31 @@ func (in *inspector) shouldFail(path string) (status int, message string, ok boo
 			in.rule = nil
 		}
 	}
-	return r.Status, r.Message, true
+	return *r, true
+}
+
+// writeFailResponse renders an injected failure per the rule's shape: raw_body
+// verbatim when set, otherwise an OpenAI envelope with optional type/code
+// overrides.
+func writeFailResponse(w http.ResponseWriter, r failRule) {
+	if r.RawBody != "" {
+		ct := r.ContentType
+		if ct == "" {
+			ct = "application/json"
+		}
+		w.Header().Set("Content-Type", ct)
+		w.WriteHeader(r.Status)
+		_, _ = w.Write([]byte(r.RawBody))
+		return
+	}
+	errType, errCode := r.ErrorType, r.ErrorCode
+	if errType == "" {
+		errType = "server_error"
+	}
+	if errCode == "" {
+		errCode = "mock_forced_failure"
+	}
+	openAIError(w, r.Status, errType, r.Message, errCode)
 }
 
 func (in *inspector) setRule(r failRule) {
@@ -231,7 +267,7 @@ func (s *Server) handleMockBehavior(w http.ResponseWriter, r *http.Request) {
 				"times must be >= 0 (0 = unlimited until DELETE)", "invalid_times")
 			return
 		}
-		if rule.Message == "" {
+		if rule.Message == "" && rule.RawBody == "" {
 			rule.Message = "mock forced failure"
 		}
 		s.insp.setRule(rule)

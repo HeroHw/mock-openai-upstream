@@ -64,21 +64,66 @@ func (s *Server) anthropicUsage(inputTokens, outputTokens int) map[string]any {
 	}
 }
 
+// anthropicError writes an Anthropic-style error envelope
+// ({"type":"error","error":{"type","message"}}).
+func anthropicError(w http.ResponseWriter, status int, errType, message string) {
+	writeJSON(w, status, map[string]any{
+		"type": "error",
+		"error": map[string]any{
+			"type":    errType,
+			"message": message,
+		},
+	})
+}
+
+// strictAnthropicCheck mimics real /v1/messages validation (MOCK_STRICT=1)：
+// max_tokens 必填且 ≥1；thinking 开启时 budget_tokens 必须 ≥1024 且严格小于
+// max_tokens。网关的 "缺省 MaxTokens 补全" 和 "-thinking 适配预算折算" 没
+// 生效时，这里必然报 400。
+func strictAnthropicCheck(req map[string]any) string {
+	maxTokens, hasMax := req["max_tokens"]
+	mt := intField(req, "max_tokens", 0)
+	if !hasMax || maxTokens == nil {
+		return "max_tokens: Field required"
+	}
+	if mt < 1 {
+		return "max_tokens: Input should be greater than or equal to 1"
+	}
+	if th, ok := req["thinking"].(map[string]any); ok && strField(th, "type", "") == "enabled" {
+		bt := intField(th, "budget_tokens", 0)
+		if bt < 1024 {
+			return "thinking.enabled.budget_tokens: Input should be greater than or equal to 1024"
+		}
+		if bt >= mt {
+			return fmt.Sprintf("`max_tokens` must be greater than `thinking.budget_tokens`. "+
+				"Please adjust your `max_tokens` (currently %d) to be greater than `thinking.budget_tokens` (currently %d).", mt, bt)
+		}
+		// 真实上游：thinking 开启时 temperature 只能为 1（网关 -thinking 适配
+		// 的 "强制 temperature=1.0" 改写点由此得到端到端验证）。
+		if temp, ok := req["temperature"].(float64); ok && temp != 1 {
+			return "`temperature` may only be set to 1 when thinking is enabled. " +
+				"Please consult our documentation at https://docs.anthropic.com/en/docs/build-with-claude/extended-thinking"
+		}
+	}
+	return ""
+}
+
 func (s *Server) handleAnthropicMessages(w http.ResponseWriter, r *http.Request) {
 	body, _ := readBody(r)
 	req := decodeJSON(body)
 	model := strField(req, "model", "mock-claude")
 
+	if s.cfg.Strict {
+		if msg := strictAnthropicCheck(req); msg != "" {
+			anthropicError(w, http.StatusBadRequest, "invalid_request_error", msg)
+			return
+		}
+	}
+
 	n := nextSeq()
 	if shouldInject(fmt.Sprintf("%s#%d", model, n), s.cfg.ErrorRate) {
 		// Anthropic error envelope.
-		writeJSON(w, s.cfg.ErrorStatus, map[string]any{
-			"type": "error",
-			"error": map[string]any{
-				"type":    "api_error",
-				"message": "mock injected failure",
-			},
-		})
+		anthropicError(w, s.cfg.ErrorStatus, "api_error", "mock injected failure")
 		return
 	}
 

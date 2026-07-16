@@ -69,9 +69,11 @@ func (s *Server) withMiddleware(next http.Handler) http.Handler {
 
 			// On-demand failure injection (POST /__mock/behavior): unlike the
 			// hash-sampled MOCK_ERROR_RATE, this fails deterministically for
-			// the next N requests — the shape auto-disable drills need.
-			if status, msg, hit := s.insp.shouldFail(r.URL.Path); hit {
-				openAIError(w, status, "server_error", msg, "mock_forced_failure")
+			// the next N requests — the shape auto-disable drills need. The
+			// rule can also dictate the error envelope (custom type/code or a
+			// verbatim raw body) for gateways matching on error codes.
+			if rule, hit := s.insp.shouldFail(r.URL.Path); hit {
+				writeFailResponse(w, rule)
 				return
 			}
 		}
