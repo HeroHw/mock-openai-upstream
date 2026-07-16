@@ -255,7 +255,7 @@ curl -X DELETE localhost:18080/__mock/behavior
 
 ## 同步 vs 异步生图/生视频
 
-- **同步（OpenAI）**：一个 POST 挂住连接，等 `*_SYNC_DELAY_S`（默认 60s）后在**同一响应**里返回结果。把延时设到大于网关超时，即可主动触发超时分支演练。
+- **同步（OpenAI）**：一个 POST 挂住连接，等 `*_SYNC_DELAY_S`（默认 60s）后在**同一响应**里返回结果。把延时设到大于网关超时，即可主动触发超时分支演练。`/v1/images/generations` 按模型名区分响应形状：`gpt-image-*` 返回新版信封（顶层 `background`/`output_format`/`quality`/`size` + `input_tokens`/`output_tokens` 明细的 `usage` 块，`data` 恒为 `b64_json`，忽略 `response_format`）；其余模型（如 `dall-e-3`）保持经典 `{created, data:[{url|b64_json}]}` 形状。
 - **异步（DashScope）**：提交瞬间返回 `task_id` + `PENDING`，耗时进入按时间计算的状态机，轮询 `/api/v1/tasks/{id}` 在 `*_DURATION_S` 后才翻成 `SUCCEEDED`。视频有并发上限，超出的任务排队为 `PENDING`。
 - **异步（智谱 CogVideoX）**：同一套时间状态机，但走智谱信封——提交返回 `id` + `PROCESSING`，轮询 `/api/paas/v4/async-result/{id}`，完成后翻成 `SUCCESS` 并带 `video_result`（含 `url`、`cover_image_url`），失败为 `FAIL`。
 - **异步（MiniMax 海螺）**：同一套时间状态机，走 MiniMax 信封——提交 `/v1/video_generation` 返回 `task_id`（`base_resp.status_code=0`），轮询 `/v1/query/video_generation?task_id=` 状态为 `Queueing`/`Processing`/`Success`/`Fail`，成功后拿 `file_id` 到 `/v1/files/retrieve?file_id=` 换取 `download_url`。

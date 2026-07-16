@@ -21,10 +21,13 @@ type mediaRequest struct {
 	prompt         string
 	n              int
 	responseFormat string // "url" | "b64_json"
+	size           string // gpt-image 信封回显（如 "1024x1024"）
+	quality        string // gpt-image 信封回显（如 "high"）
 }
 
 func parseMediaRequest(r *http.Request) mediaRequest {
-	req := mediaRequest{model: "mock-image", n: 1, responseFormat: "url"}
+	req := mediaRequest{model: "mock-image", n: 1, responseFormat: "url",
+		size: "1024x1024", quality: "high"}
 
 	ct := r.Header.Get("Content-Type")
 	if strings.HasPrefix(ct, "multipart/form-data") {
@@ -33,6 +36,8 @@ func parseMediaRequest(r *http.Request) mediaRequest {
 			req.prompt = formStr(r, "prompt", "")
 			req.n = formInt(r, "n", 1)
 			req.responseFormat = formStr(r, "response_format", "url")
+			req.size = formStr(r, "size", req.size)
+			req.quality = formStr(r, "quality", req.quality)
 		}
 		return req
 	}
@@ -43,10 +48,19 @@ func parseMediaRequest(r *http.Request) mediaRequest {
 	req.prompt = strField(m, "prompt", "")
 	req.n = intField(m, "n", 1)
 	req.responseFormat = strField(m, "response_format", "url")
+	req.size = strField(m, "size", req.size)
+	req.quality = strField(m, "quality", req.quality)
 	if req.n < 1 {
 		req.n = 1
 	}
 	return req
+}
+
+// isGPTImage reports whether the request targets the gpt-image family, which
+// uses the newer response envelope (background/output_format/quality/size/
+// usage) and always returns b64_json — the real API ignores response_format.
+func (m mediaRequest) isGPTImage() bool {
+	return strings.HasPrefix(strings.ToLower(m.model), "gpt-image")
 }
 
 func formStr(r *http.Request, key, def string) string {
@@ -91,8 +105,12 @@ func (s *Server) serveSyncMedia(w http.ResponseWriter, r *http.Request, minDelay
 		return // client/gateway gave up (timeout path under test)
 	}
 
-	b64 := req.responseFormat == "b64_json"
 	isVideo := strings.HasSuffix(asset, ".mp4")
+	if !isVideo && req.isGPTImage() {
+		s.writeGPTImageJSON(w, req)
+		return
+	}
+	b64 := req.responseFormat == "b64_json"
 	s.writeMediaJSON(w, r, req.n, b64, isVideo, req.prompt, asset)
 }
 
@@ -160,6 +178,78 @@ func (s *Server) writeMediaJSON(w http.ResponseWriter, r *http.Request, n int, b
 		if len(payload) > 0 {
 			w.Write(payload) // shared bytes, written by reference — never copied
 		}
+		w.Write(tail)
+	}
+	w.Write(suffix)
+}
+
+// gpt-image 系列的 usage 常量：真实 API 按图片规格计费 output image_tokens，
+// mock 固定为一个有代表性的值（1024x1024/high 档约 7000+），便于计费断言。
+const gptImageOutputTokens = 7024
+
+// writeGPTImageJSON streams the gpt-image response envelope, which differs
+// from the classic DALL·E shape: top-level background/output_format/quality/
+// size fields plus a Responses-style usage block with image/text token
+// details. Like writeMediaJSON it writes the shared base64 payload by
+// reference and sets an exact Content-Length.
+func (s *Server) writeGPTImageJSON(w http.ResponseWriter, req mediaRequest) {
+	payload := s.assets.pngB64
+
+	inputTokens := estimateTokens(req.prompt)
+	if s.cfg.UsageMode == "fixed" {
+		inputTokens = 10
+	}
+	outputTokens := gptImageOutputTokens
+	if s.cfg.ImageOutputTokens > 0 {
+		outputTokens = s.cfg.ImageOutputTokens
+	}
+	usageJSON, _ := json.Marshal(map[string]any{
+		"input_tokens": inputTokens,
+		"input_tokens_details": map[string]any{
+			"image_tokens": 0,
+			"text_tokens":  inputTokens,
+		},
+		"output_tokens": outputTokens,
+		"output_tokens_details": map[string]any{
+			"image_tokens": outputTokens,
+			"text_tokens":  0,
+		},
+		"total_tokens": inputTokens + outputTokens,
+	})
+	qualityQuoted, _ := json.Marshal(req.quality)
+	sizeQuoted, _ := json.Marshal(req.size)
+
+	prefix := []byte(`{"background":"opaque","created":0,"data":[`)
+	head := []byte(`{"b64_json":"`)
+	tail := []byte(`"}`)
+	var suffix []byte
+	suffix = append(suffix, `],"output_format":"png","quality":`...)
+	suffix = append(suffix, qualityQuoted...)
+	suffix = append(suffix, `,"quota":189711,"size":`...)
+	suffix = append(suffix, sizeQuoted...)
+	suffix = append(suffix, `,"usage":`...)
+	suffix = append(suffix, usageJSON...)
+	suffix = append(suffix, '}')
+
+	n := req.n
+	entryLen := len(head) + len(payload) + len(tail)
+	commas := 0
+	if n > 1 {
+		commas = n - 1
+	}
+	total := len(prefix) + n*entryLen + commas + len(suffix)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Length", itoa(total))
+	w.WriteHeader(http.StatusOK)
+
+	w.Write(prefix)
+	for i := 0; i < n; i++ {
+		if i > 0 {
+			w.Write([]byte{','})
+		}
+		w.Write(head)
+		w.Write(payload) // shared bytes, written by reference — never copied
 		w.Write(tail)
 	}
 	w.Write(suffix)

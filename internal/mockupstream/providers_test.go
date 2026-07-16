@@ -278,6 +278,57 @@ func TestResponsesStreamEvents(t *testing.T) {
 	}
 }
 
+func TestGPTImageEnvelope(t *testing.T) {
+	ts := newTestServer()
+	defer ts.Close()
+
+	// gpt-image 系列返回新版信封：background/output_format/quality/size 顶层
+	// 字段 + Responses 风格 usage，data 恒为 b64_json（忽略 response_format）。
+	resp, data := postJSON(t, ts.URL+"/v1/images/generations",
+		`{"model":"gpt-image-2","prompt":"画一副清明上河图","n":1,"size":"1024x1024","quality":"high","style":"vivid"}`)
+	if resp.StatusCode != 200 {
+		t.Fatalf("status %d: %s", resp.StatusCode, data)
+	}
+	var out map[string]any
+	if err := json.Unmarshal(data, &out); err != nil {
+		t.Fatalf("bad json: %v", err)
+	}
+	if out["background"] != "opaque" || out["output_format"] != "png" {
+		t.Fatalf("missing gpt-image envelope fields: %v", out["background"])
+	}
+	if out["quality"] != "high" || out["size"] != "1024x1024" {
+		t.Fatalf("quality/size should echo the request, got %v/%v", out["quality"], out["size"])
+	}
+	entry := out["data"].([]any)[0].(map[string]any)
+	if entry["b64_json"].(string) == "" {
+		t.Fatal("gpt-image data must carry b64_json")
+	}
+	usage := out["usage"].(map[string]any)
+	outDetails := usage["output_tokens_details"].(map[string]any)
+	if outDetails["image_tokens"].(float64) <= 0 || outDetails["text_tokens"].(float64) != 0 {
+		t.Fatalf("output tokens must be all image_tokens: %s", data)
+	}
+	inDetails := usage["input_tokens_details"].(map[string]any)
+	if inDetails["text_tokens"].(float64) <= 0 {
+		t.Fatalf("input tokens must count prompt text: %s", data)
+	}
+	if usage["total_tokens"].(float64) != usage["input_tokens"].(float64)+usage["output_tokens"].(float64) {
+		t.Fatalf("total_tokens mismatch: %s", data)
+	}
+
+	// 非 gpt-image 模型仍走经典 DALL·E 形状（默认 url、无信封字段）。
+	_, data2 := postJSON(t, ts.URL+"/v1/images/generations",
+		`{"model":"dall-e-3","prompt":"a cat"}`)
+	var out2 map[string]any
+	json.Unmarshal(data2, &out2)
+	if _, has := out2["output_format"]; has {
+		t.Fatalf("classic models must keep the legacy shape: %s", data2)
+	}
+	if out2["data"].([]any)[0].(map[string]any)["url"] == "" {
+		t.Fatalf("classic shape should default to url: %s", data2)
+	}
+}
+
 func TestModelsListCoversPopularModels(t *testing.T) {
 	ts := newTestServer()
 	defer ts.Close()
