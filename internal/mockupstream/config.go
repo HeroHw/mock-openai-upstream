@@ -16,7 +16,7 @@ import (
 // and an env var can still override any single field for a one-off CI run.
 // ListenAddr is the fixed address the server listens on. It is intentionally
 // not configurable: in a container you remap the host-side port via the
-// docker-compose port mapping; for local runs it is always :18080.
+// docker-compose port mapping; for local runs it is always :9050.
 const ListenAddr = ":9050"
 
 type Config struct {

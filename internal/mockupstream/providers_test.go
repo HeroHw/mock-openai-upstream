@@ -346,3 +346,62 @@ func TestModelsListCoversPopularModels(t *testing.T) {
 		}
 	}
 }
+
+func TestGeminiVersionPathsAndVertexForm(t *testing.T) {
+	ts := newTestServer()
+	defer ts.Close()
+
+	// 网关按 VersionSettings 查表拼版本路径（v1/v1beta/v1alpha），Vertex AI
+	// 渠道则用 projects/.../publishers/google 形式——四种路径都必须命中
+	// Gemini handler 并回显对应 modelVersion。
+	for path, wantModel := range map[string]string{
+		"/v1beta/models/gemini-2.5-pro:generateContent":  "gemini-2.5-pro",
+		"/v1/models/gemini-1.0-pro:generateContent":      "gemini-1.0-pro",
+		"/v1alpha/models/gemini-exp:generateContent":     "gemini-exp",
+		"/v1/projects/p/locations/us-central1/publishers/google/models/gemini-2.5-flash:generateContent": "gemini-2.5-flash",
+	} {
+		resp, data := postJSON(t, ts.URL+path,
+			`{"contents":[{"role":"user","parts":[{"text":"hi"}]}]}`)
+		if resp.StatusCode != 200 {
+			t.Fatalf("%s: status %d: %s", path, resp.StatusCode, data)
+		}
+		var out map[string]any
+		json.Unmarshal(data, &out)
+		if got := out["modelVersion"]; got != wantModel {
+			t.Fatalf("%s: modelVersion = %v, want %s", path, got, wantModel)
+		}
+	}
+}
+
+func TestGeminiStreamAltSSE(t *testing.T) {
+	ts := newTestServer()
+	defer ts.Close()
+
+	// ?alt=sse（网关的实际请求形态）：匿名 data: 帧、text/event-stream、无
+	// [DONE] 哨兵，末帧带 finishReason + usageMetadata。
+	resp, data := postJSON(t, ts.URL+"/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse",
+		`{"contents":[{"role":"user","parts":[{"text":"hi"}]}]}`)
+	if ct := resp.Header.Get("Content-Type"); !strings.HasPrefix(ct, "text/event-stream") {
+		t.Fatalf("alt=sse content-type = %q, want text/event-stream", ct)
+	}
+	s := string(data)
+	if !strings.Contains(s, "data: {") {
+		t.Fatalf("alt=sse stream missing data: frames: %s", s)
+	}
+	if strings.Contains(s, "[DONE]") {
+		t.Fatalf("gemini sse must not carry the OpenAI [DONE] sentinel: %s", s)
+	}
+	if !strings.Contains(s, `"finishReason":"STOP"`) || !strings.Contains(s, "usageMetadata") {
+		t.Fatalf("final sse chunk missing finishReason/usageMetadata: %s", s)
+	}
+
+	// 不带 alt=sse：保持 newline-delimited JSON（真实 Gemini 默认形态）。
+	resp2, data2 := postJSON(t, ts.URL+"/v1beta/models/gemini-2.5-flash:streamGenerateContent",
+		`{"contents":[{"role":"user","parts":[{"text":"hi"}]}]}`)
+	if ct := resp2.Header.Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
+		t.Fatalf("default stream content-type = %q, want application/json", ct)
+	}
+	if strings.Contains(string(data2), "data: ") {
+		t.Fatalf("default stream must not emit sse frames: %s", data2)
+	}
+}

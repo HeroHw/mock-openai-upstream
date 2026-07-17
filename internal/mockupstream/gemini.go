@@ -8,11 +8,15 @@ import (
 )
 
 // gemini.go implements the Gemini native endpoints (doc §2.3):
-//   /v1beta/models/{model}:generateContent
-//   /v1beta/models/{model}:streamGenerateContent
-//   /v1beta/models/{model}:countTokens
+//   /{version}/models/{model}:generateContent
+//   /{version}/models/{model}:streamGenerateContent
+//   /{version}/models/{model}:countTokens
 // The action is encoded as a ":suffix" on the path and the key arrives via
-// ?key=, so we split on ':' rather than relying on path segments.
+// ?key=, so we split on ':' rather than relying on path segments. Matching is
+// version-agnostic (v1 / v1beta / v1alpha all route here — gateways pick the
+// version per model via a VersionSettings table) and also covers the Vertex AI
+// path form (/v1/projects/{p}/locations/{l}/publishers/google/models/{model}:{action}),
+// since both end in "/models/{model}:{action}".
 
 // parseGeminiPath extracts the model name and action from a Gemini path like
 // "/v1beta/models/gemini-pro:generateContent".
@@ -181,7 +185,10 @@ func (s *Server) handleGemini(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"totalTokens": pt})
 		return
 	case "streamGenerateContent":
-		s.streamGemini(w, r, model, reply, pt, ct, wantsImage)
+		// Real Gemini streams newline-delimited JSON by default, but gateways
+		// almost always request `?alt=sse` and parse `data:` frames instead.
+		s.streamGemini(w, r, model, reply, pt, ct, wantsImage,
+			strings.EqualFold(r.URL.Query().Get("alt"), "sse"))
 		return
 	default: // generateContent (and any unrecognized action) → non-stream
 		n := nextSeq()
@@ -299,19 +306,38 @@ func (s *Server) geminiResponse(model, text string, pt, ct int, withImage bool) 
 	}
 }
 
-// streamGemini emits one JSON chunk per token. Gemini streams newline-delimited
-// JSON objects (each a partial GenerateContentResponse), not `data:` SSE frames.
+// streamGemini emits one JSON chunk per token. By default Gemini streams
+// newline-delimited JSON objects (each a partial GenerateContentResponse); with
+// `?alt=sse` (what gateways request) each chunk goes out as an anonymous SSE
+// `data:` frame instead — no [DONE] sentinel, the stream just ends.
 // withImage 时最后一个 chunk 的 parts 里追加 inlineData PNG。
-func (s *Server) streamGemini(w http.ResponseWriter, r *http.Request, model, reply string, pt, ct int, withImage bool) {
-	flusher, ok := w.(http.Flusher)
-	if !ok {
-		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
-		return
+func (s *Server) streamGemini(w http.ResponseWriter, r *http.Request, model, reply string, pt, ct int, withImage, sse bool) {
+	var writeChunk func([]byte) error
+	if sse {
+		sw, ok := newSSE(w)
+		if !ok {
+			http.Error(w, "streaming unsupported", http.StatusInternalServerError)
+			return
+		}
+		writeChunk = func(b []byte) error { return sw.data(string(b)) }
+	} else {
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			http.Error(w, "streaming unsupported", http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("X-Accel-Buffering", "no")
+		w.WriteHeader(http.StatusOK)
+		flusher.Flush()
+		writeChunk = func(b []byte) error {
+			if _, err := fmt.Fprintf(w, "%s\r\n", b); err != nil {
+				return err
+			}
+			flusher.Flush()
+			return nil
+		}
 	}
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Accel-Buffering", "no")
-	w.WriteHeader(http.StatusOK)
-	flusher.Flush()
 	done := clientGone(r)
 
 	if !sleepCtx(randomDelay(model, s.cfg.TTFTMin, s.cfg.TTFTMax), done) {
@@ -352,9 +378,8 @@ func (s *Server) streamGemini(w http.ResponseWriter, r *http.Request, model, rep
 			chunk["usageMetadata"] = s.geminiUsageMetadata(pt, ct)
 		}
 		b, _ := json.Marshal(chunk)
-		if _, err := fmt.Fprintf(w, "%s\r\n", b); err != nil {
+		if err := writeChunk(b); err != nil {
 			return
 		}
-		flusher.Flush()
 	}
 }

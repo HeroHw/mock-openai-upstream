@@ -191,7 +191,10 @@ func (s *Server) dispatch(w http.ResponseWriter, r *http.Request) {
 	case strings.HasSuffix(path, "/files/retrieve"):
 		s.handleMiniMaxFileRetrieve(w, r)
 
-	// --- Gemini native (§2.3): /v1beta/models/{model}:{action} ---
+	// --- Gemini native (§2.3): /{v1|v1beta|v1alpha}/models/{model}:{action},
+	// plus the Vertex AI form /v1/projects/.../publishers/google/models/{model}:{action}.
+	// Both carry "/models/" and a ":action" suffix, so one case covers them all
+	// (gateways route API versions per model via a VersionSettings table). ---
 	case strings.Contains(path, "/models/") && strings.Contains(path, ":"):
 		s.handleGemini(w, r)
 
