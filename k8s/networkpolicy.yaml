@@ -1,0 +1,25 @@
+# Optional: restrict ingress to pods labeled as gateway clients, since the
+# mock does no auth by default. Requires a CNI that enforces NetworkPolicy
+# (Calico, Cilium, ...). Adjust the client label — or, in multi-tenant
+# clusters, add a namespaceSelector — to match your gateway.
+#
+# Not included in kustomization.yaml by default; apply explicitly:
+#   kubectl apply -f k8s/networkpolicy.yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: mockupstream
+  labels:
+    app: mockupstream
+spec:
+  podSelector:
+    matchLabels:
+      app: mockupstream
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              mockupstream-client: "true"
+      ports:
+        - port: 9050

@@ -1,0 +1,48 @@
+# Mounted into the pod at /config/config.json and loaded via `-config`.
+# Keep in sync with the repo's config.json — env vars in deployment.yaml
+# still override any field here (built-ins < file < env).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mockupstream-config
+  labels:
+    app: mockupstream
+data:
+  config.json: |
+    {
+      "api_key": "sk-mock-secret",
+
+      "ttft_min_ms": 1000,
+      "ttft_max_ms": 30000,
+      "token_interval_ms": 10,
+      "latency_min_ms": 1000,
+      "latency_max_ms": 10000,
+      "error_rate": 0,
+      "error_status": 500,
+      "reply_text": "Hello from the mock upstream service.",
+      "usage_mode": "echo",
+
+      "cache_read_tokens": 0,
+      "cache_creation_5m_tokens": 0,
+      "cache_creation_1h_tokens": 0,
+      "image_input_tokens": 0,
+      "image_output_tokens": 0,
+      "audio_input_tokens": 0,
+      "audio_output_tokens": 0,
+
+      "image_sync_delay_min_s": 1,
+      "image_sync_delay_max_s": 30,
+      "video_sync_delay_min_s": 1,
+      "video_sync_delay_max_s": 30,
+      "sync_fail_rate": 0,
+
+      "image_duration_min_s": 1,
+      "image_duration_max_s": 30,
+      "video_duration_min_s": 1,
+      "video_duration_max_s": 30,
+      "video_concurrency": 2,
+      "task_fail_rate": 0,
+
+      "require_key": false,
+      "strict": false
+    }

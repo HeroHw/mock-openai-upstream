@@ -1,0 +1,80 @@
+# mockupstream Deployment.
+#
+# replicas MUST stay at 1: request capture (/__mock/requests) and async task
+# state (DashScope / GLM / MiniMax polling) live in process memory, so with
+# multiple pods a submit and its poll can land on different replicas. Scale
+# resources vertically instead.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mockupstream
+  labels:
+    app: mockupstream
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mockupstream
+  strategy:
+    # In-memory state is lost on restart anyway; Recreate avoids two pods
+    # briefly sharing traffic during a rollout.
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: mockupstream
+    spec:
+      containers:
+        - name: mockupstream
+          # Replace with your registry; the compose build tags mockupstream:latest.
+          image: mockupstream:latest
+          imagePullPolicy: IfNotPresent
+          args: ["-config", "/config/config.json"]
+          ports:
+            - name: http
+              containerPort: 9050
+          env:
+            # Pin the Go scheduler to the CPU limit, not the node's core count.
+            - name: GOMAXPROCS
+              value: "6"
+          resources:
+            requests:
+              cpu: "2"
+              memory: 2Gi
+            limits:
+              cpu: "6"
+              memory: 16Gi
+          volumeMounts:
+            - name: config
+              mountPath: /config
+              readOnly: true
+          # /__mock/healthz bypasses auth, so probes work even with
+          # MOCK_API_KEY / require_key enabled.
+          livenessProbe:
+            httpGet:
+              path: /__mock/healthz
+              port: http
+            initialDelaySeconds: 2
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /__mock/healthz
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+          securityContext:
+            # The image already runs as 65532; restate it so PodSecurity
+            # "restricted" admission passes without inspecting the image.
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+      volumes:
+        - name: config
+          configMap:
+            name: mockupstream-config

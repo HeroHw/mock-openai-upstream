@@ -1,0 +1,17 @@
+# ClusterIP only — the mock does no auth by default. Do NOT expose it via
+# Ingress / LoadBalancer / NodePort. Gateways in the cluster reach it at
+# http://mockupstream.<namespace>.svc:9050
+apiVersion: v1
+kind: Service
+metadata:
+  name: mockupstream
+  labels:
+    app: mockupstream
+spec:
+  type: ClusterIP
+  selector:
+    app: mockupstream
+  ports:
+    - name: http
+      port: 9050
+      targetPort: http

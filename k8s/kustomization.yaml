@@ -1,0 +1,16 @@
+# kubectl apply -k k8s/
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - configmap.yaml
+  - deployment.yaml
+  - service.yaml
+  # networkpolicy.yaml is opt-in (needs a NetworkPolicy-enforcing CNI and a
+  # client label on the gateway pods); uncomment to include it.
+  # - networkpolicy.yaml
+
+# Override the image reference for your registry without editing deployment.yaml:
+#   cd k8s && kustomize edit set image mockupstream=registry.example.com/mockupstream:v1
+images:
+  - name: mockupstream

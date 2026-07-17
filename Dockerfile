@@ -24,10 +24,10 @@ FROM scratch AS runtime
 COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 COPY --from=build /out/mockupstream /mockupstream
 
-# The listen port is fixed at :18080 inside the container. To change the
+# The listen port is fixed at :9050 inside the container. To change the
 # externally-published port, edit the docker-compose port mapping (or `docker
 # run -p`), not anything here.
-EXPOSE 18080
+EXPOSE 9050
 
 # Run as an unprivileged uid (scratch has no /etc/passwd; numeric uid is fine).
 USER 65532:65532
