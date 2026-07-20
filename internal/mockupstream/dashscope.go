@@ -14,6 +14,7 @@ import (
 // handleDashScopeSubmit enqueues a task and returns task_id + PENDING at once,
 // without blocking the connection (doc §8.4).
 func (s *Server) handleDashScopeSubmit(w http.ResponseWriter, r *http.Request, kind string) {
+
 	body, _ := readBody(r)
 	req := decodeJSON(body)
 	model := strField(req, "model", "mock-"+kind)
@@ -21,7 +22,7 @@ func (s *Server) handleDashScopeSubmit(w http.ResponseWriter, r *http.Request, k
 	task := s.queue.Submit(kind, model, time.Now())
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"request_id": fmt.Sprintf("mock-req-%d", nextSeq()),
+		"request_id": fmt.Sprintf(`mock-req-%d`, nextSeq()),
 		"output": map[string]any{
 			"task_id":     task.ID,
 			"task_status": statusPending,
@@ -48,6 +49,7 @@ func (s *Server) handleTaskQuery(w http.ResponseWriter, r *http.Request) {
 
 	now := time.Now()
 	status := task.Status(now)
+
 	output := map[string]any{
 		"task_id":     task.ID,
 		"task_status": status,
@@ -63,6 +65,16 @@ func (s *Server) handleTaskQuery(w http.ResponseWriter, r *http.Request) {
 	case statusFailed:
 		output["code"] = "InternalError.Timeout"
 		output["message"] = "mock injected failure"
+	case statusRunning:
+		// 对齐 DashScope 真实轮询回包：进行中携带时间与进度字段。
+		const dsTime = "2006-01-02 15:04:05.000"
+		output["submit_time"] = task.SubmitAt.Format(dsTime)
+		output["scheduled_time"] = task.StartAt.Format(dsTime)
+		output["task_metrics"] = map[string]any{
+			"TOTAL":     1,
+			"SUCCEEDED": 0,
+			"FAILED":    0,
+		}
 	}
 
 	writeJSON(w, http.StatusOK, resp)
